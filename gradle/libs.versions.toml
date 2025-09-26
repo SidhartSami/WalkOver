@@ -12,6 +12,7 @@ googleServices = "4.4.0"
 firebase = "32.7.0"
 playServicesLocation = "21.0.1"
 coroutines = "1.7.3"
+osmdroid = "6.1.18"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,6 +41,9 @@ play-services-location = { group = "com.google.android.gms", name = "play-servic
 
 # Coroutines
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# OpenStreetMap
+osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

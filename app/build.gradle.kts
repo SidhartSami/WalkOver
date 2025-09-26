@@ -50,7 +50,8 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     
-    // Map functionality removed - will be added later
+    // OpenStreetMap with osmdroid
+    implementation(libs.osmdroid.android)
     
     // Firebase
     implementation(platform(libs.firebase.bom))

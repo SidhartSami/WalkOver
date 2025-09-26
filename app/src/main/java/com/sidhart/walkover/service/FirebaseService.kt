@@ -129,5 +129,25 @@ class FirebaseService {
             Result.failure(Exception("Firebase sign-in failed: ${e.message}", e))
         }
     }
+
+    suspend fun getWalks(): Result<List<Walk>> {
+        return try {
+            val currentUser = auth.currentUser
+            if (currentUser == null) {
+                Result.failure(Exception("User not authenticated"))
+            } else {
+                val walks = firestore.collection(WALKS_COLLECTION)
+                    .whereEqualTo("userId", currentUser.uid)
+                    .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .get()
+                    .await()
+                    .toObjects(Walk::class.java)
+                
+                Result.success(walks)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 

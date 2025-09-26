@@ -32,6 +32,7 @@ import com.sidhart.walkover.data.Walk
 import com.sidhart.walkover.service.FirebaseService
 import com.sidhart.walkover.service.LocationService
 import com.sidhart.walkover.ui.LeaderboardActivity
+import com.sidhart.walkover.ui.MapActivity
 import com.sidhart.walkover.ui.theme.WalkOverTheme
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
@@ -232,16 +233,28 @@ fun FitnessMapScreen(
             }
         }
         
-        // Leaderboard Button
-        Button(
-            onClick = {
-                context.startActivity(Intent(context, LeaderboardActivity::class.java))
-            },
+        // Navigation Buttons
+        Column(
             modifier = Modifier
                 .padding(16.dp)
-                .align(Alignment.BottomEnd)
+                .align(Alignment.BottomEnd),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Leaderboard")
+            Button(
+                onClick = {
+                    context.startActivity(Intent(context, MapActivity::class.java))
+                }
+            ) {
+                Text("Open Map")
+            }
+            
+            Button(
+                onClick = {
+                    context.startActivity(Intent(context, LeaderboardActivity::class.java))
+                }
+            ) {
+                Text("Leaderboard")
+            }
         }
     }
 }

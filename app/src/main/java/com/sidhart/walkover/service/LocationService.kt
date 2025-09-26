@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
 import com.sidhart.walkover.data.LocationPoint
@@ -13,9 +14,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlin.math.*
 
 class LocationService(private val context: Context) {
-    private val fusedLocationClient: FusedLocationProviderClient = 
+    private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
-    
+
     private val locationRequest = LocationRequest.Builder(
         Priority.PRIORITY_HIGH_ACCURACY,
         1000L // 1 second
@@ -28,11 +29,11 @@ class LocationService(private val context: Context) {
         return ActivityCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED || 
-        ActivityCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+        ) == PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
     }
 
     fun getLocationUpdates(): Flow<LocationPoint> = callbackFlow {
@@ -53,16 +54,51 @@ class LocationService(private val context: Context) {
                     trySend(locationPoint)
                 }
             }
+
+            override fun onLocationAvailability(locationAvailability: LocationAvailability) {
+                if (!locationAvailability.isLocationAvailable) {
+                    Log.w("LocationService", "Location is not available")
+                }
+            }
         }
 
-        fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            null
-        )
+        try {
+            // Double-check permission before making the call
+            if (ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                close(Exception("Location permission not granted"))
+                return@callbackFlow
+            }
+
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback,
+                null
+            ).addOnFailureListener { exception ->
+                Log.e("LocationService", "Failed to request location updates", exception)
+                close(exception)
+            }
+        } catch (securityException: SecurityException) {
+            Log.e("LocationService", "Security exception when requesting location updates", securityException)
+            close(securityException)
+        } catch (exception: Exception) {
+            Log.e("LocationService", "Unexpected exception when requesting location updates", exception)
+            close(exception)
+        }
 
         awaitClose {
-            fusedLocationClient.removeLocationUpdates(locationCallback)
+            try {
+                fusedLocationClient.removeLocationUpdates(locationCallback)
+            } catch (exception: Exception) {
+                Log.e("LocationService", "Error removing location updates", exception)
+            }
         }
     }
 
@@ -72,24 +108,129 @@ class LocationService(private val context: Context) {
             return@callbackFlow
         }
 
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            if (location != null) {
-                val locationPoint = LocationPoint(
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    timestamp = location.time,
-                    accuracy = location.accuracy
-                )
-                trySend(locationPoint)
-                close()
-            } else {
-                close(Exception("Location not available"))
+        var locationCallback: LocationCallback? = null
+
+        // Define requestFreshLocation function at the proper scope
+        fun requestFreshLocation() {
+            try {
+                val freshLocationRequest = LocationRequest.Builder(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    5000L // 5 seconds
+                ).apply {
+                    setMaxUpdateDelayMillis(10000L)
+                    setMaxUpdates(1) // Only get one update
+                }.build()
+
+                locationCallback = object : LocationCallback() {
+                    override fun onLocationResult(locationResult: LocationResult) {
+                        locationResult.lastLocation?.let { freshLocation ->
+                            val locationPoint = LocationPoint(
+                                latitude = freshLocation.latitude,
+                                longitude = freshLocation.longitude,
+                                timestamp = freshLocation.time,
+                                accuracy = freshLocation.accuracy
+                            )
+                            trySend(locationPoint)
+                            close()
+                        } ?: run {
+                            close(Exception("No location available"))
+                        }
+                    }
+
+                    override fun onLocationAvailability(locationAvailability: LocationAvailability) {
+                        if (!locationAvailability.isLocationAvailable) {
+                            Log.w("LocationService", "Location is not available for current location request")
+                            close(Exception("Location not available"))
+                        }
+                    }
+                }
+
+                // Double-check permission again before the actual call
+                if (ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    ) != PackageManager.PERMISSION_GRANTED &&
+                    ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    close(Exception("Location permission not granted"))
+                    return
+                }
+
+                fusedLocationClient.requestLocationUpdates(
+                    freshLocationRequest,
+                    locationCallback!!,
+                    null
+                ).addOnFailureListener { exception ->
+                    Log.e("LocationService", "Failed to request fresh location", exception)
+                    close(exception)
+                }
+
+            } catch (securityException: SecurityException) {
+                Log.e("LocationService", "Security exception when requesting fresh location", securityException)
+                close(securityException)
+            } catch (exception: Exception) {
+                Log.e("LocationService", "Unexpected exception when requesting fresh location", exception)
+                close(exception)
             }
-        }.addOnFailureListener { exception ->
+        }
+
+        try {
+            // Double-check permission before making the call
+            if (ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                close(Exception("Location permission not granted"))
+                return@callbackFlow
+            }
+
+            // First try to get last known location
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null && location.time > System.currentTimeMillis() - 60000) { // Less than 1 minute old
+                    val locationPoint = LocationPoint(
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        timestamp = location.time,
+                        accuracy = location.accuracy
+                    )
+                    trySend(locationPoint)
+                    close()
+                } else {
+                    // Last location is too old or null, request fresh location
+                    requestFreshLocation()
+                }
+            }.addOnFailureListener { exception ->
+                Log.e("LocationService", "Failed to get last known location", exception)
+                // Try to get fresh location as fallback
+                requestFreshLocation()
+            }
+
+
+        } catch (securityException: SecurityException) {
+            Log.e("LocationService", "Security exception when getting current location", securityException)
+            close(securityException)
+        } catch (exception: Exception) {
+            Log.e("LocationService", "Unexpected exception when getting current location", exception)
             close(exception)
         }
 
-        awaitClose { }
+        awaitClose {
+            try {
+                locationCallback?.let { callback ->
+                    fusedLocationClient.removeLocationUpdates(callback)
+                }
+            } catch (exception: Exception) {
+                Log.e("LocationService", "Error removing location updates in getCurrentLocation", exception)
+            }
+        }
     }
 
     companion object {
@@ -115,7 +256,7 @@ class LocationService(private val context: Context) {
                 Pair(Math.toRadians(point.longitude), Math.toRadians(point.latitude))
             }
 
-            // Calculate area using spherical geometry
+            // Calculate area using spherical geometry (Shoelace formula adapted for sphere)
             var area = 0.0
             val n = radianPoints.size
 
@@ -134,4 +275,3 @@ class LocationService(private val context: Context) {
         }
     }
 }
-
