@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    
+    <!-- Drop shadow for depth -->
+    <path
+        android:fillColor="#40000000"
+        android:pathData="M16,3C10.48,3 6,7.48 6,13c0,7 10,17 10,17s10,-10 10,-17C26,7.48 21.52,3 16,3z"/>
+    
+    <!-- Outer stroke for definition -->
+    <path
+        android:fillColor="#1A1A1A"
+        android:pathData="M16,2C10.48,2 6,6.48 6,12c0,7 10,18 10,18s10,-11 10,-18C26,6.48 21.52,2 16,2z"/>
+    
+    <!-- Main pin body with gradient effect -->
+    <path
+        android:fillColor="#60A5FA"
+        android:pathData="M16,3.5C11.31,3.5 7.5,7.31 7.5,12c0,6.5 8.5,16.5 8.5,16.5s8.5,-10 8.5,-16.5C24.5,7.31 20.69,3.5 16,3.5z"/>
+    
+    <!-- Inner highlight for depth -->
+    <path
+        android:fillColor="#93C5FD"
+        android:pathData="M16,4.5C12.13,4.5 9,7.63 9,11.5c0,5.5 7,14.5 7,14.5s7,-9 7,-14.5C23,7.63 19.87,4.5 16,4.5z"/>
+    
+    <!-- Inner circle background -->
+    <path
+        android:fillColor="#F3F4F6"
+        android:pathData="M16,8c-2.21,0 -4,1.79 -4,4s1.79,4 4,4s4,-1.79 4,-4S18.21,8 16,8z"/>
+    
+    <!-- Inner circle stroke -->
+    <path
+        android:fillColor="#D1D5DB"
+        android:pathData="M16,8.5c-1.93,0 -3.5,1.57 -3.5,3.5s1.57,3.5 3.5,3.5s3.5,-1.57 3.5,-3.5S17.93,8.5 16,8.5z"/>
+    
+    <!-- Center dot -->
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M16,14c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2s2,0.9 2,2S17.1,14 16,14z"/>
+</vector>
