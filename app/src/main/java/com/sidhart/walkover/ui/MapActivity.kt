@@ -76,9 +76,9 @@ enum class MapStyle(val displayName: String, val tileSource: org.osmdroid.tilepr
         "© CARTO, © OpenStreetMap contributors"
     ), false),
 
-    // Dark themes
-    CARTO_DARK("CartoDB Dark", XYTileSource(
-        "CARTO_DARK",
+    // Dark themes - Fixed CartoDB Dark (this is the proper dark equivalent of Positron)
+    CARTODB_DARK_MATTER("CartoDB Dark Matter", XYTileSource(
+        "CARTODB_DARK_MATTER",
         0, 19, 256, ".png",
         arrayOf("https://a.basemaps.cartocdn.com/dark_all/",
             "https://b.basemaps.cartocdn.com/dark_all/",
@@ -94,16 +94,6 @@ enum class MapStyle(val displayName: String, val tileSource: org.osmdroid.tilepr
             "https://b.basemaps.cartocdn.com/dark_nolabels/",
             "https://c.basemaps.cartocdn.com/dark_nolabels/",
             "https://d.basemaps.cartocdn.com/dark_nolabels/"),
-        "© CARTO, © OpenStreetMap contributors"
-    ), true),
-
-    CARTO_DARK_VOYAGER("Carto Dark Voyager", XYTileSource(
-        "CARTO_DARK_VOYAGER",
-        0, 19, 256, ".png",
-        arrayOf("https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/",
-            "https://b.basemaps.cartocdn.com/rastertiles/voyager_labels_under/",
-            "https://c.basemaps.cartocdn.com/rastertiles/voyager_labels_under/",
-            "https://d.basemaps.cartocdn.com/rastertiles/voyager_labels_under/"),
         "© CARTO, © OpenStreetMap contributors"
     ), true)
 }
@@ -205,8 +195,26 @@ class MapActivity : ComponentActivity() {
         mapView?.let { map ->
             try {
                 android.util.Log.d("MapActivity", "Setting tile source: ${newStyle.tileSource.name()}")
+
+                // Store current map state
+                val currentCenter = map.mapCenter
+                val currentZoom = map.zoomLevelDouble
+
+                // Clear tile cache for the new style to ensure fresh tiles
+                map.tileProvider.clearTileCache()
+
+                // Set new tile source
                 map.setTileSource(newStyle.tileSource)
+
+                // Restore map state and force refresh
+                map.controller.setCenter(currentCenter)
+                map.controller.setZoom(currentZoom)
                 map.invalidate()
+
+                // Force tile refresh by triggering a zoom change and back
+                map.controller.zoomIn()
+                map.controller.zoomOut()
+
                 Toast.makeText(this, "Changed to ${newStyle.displayName}", Toast.LENGTH_SHORT).show()
                 android.util.Log.d("MapActivity", "Successfully changed to ${newStyle.displayName}")
             } catch (e: Exception) {
@@ -219,18 +227,17 @@ class MapActivity : ComponentActivity() {
     fun toggleTheme() {
         android.util.Log.d("MapActivity", "Toggling theme from ${currentMapStyle.displayName} (isDark: ${currentMapStyle.isDark})")
         val newStyle = when (currentMapStyle) {
-            // Light to Dark
-            MapStyle.CARTODB_POSITRON -> MapStyle.CARTO_DARK
+            // Light to Dark - Fixed mapping
+            MapStyle.CARTODB_POSITRON -> MapStyle.CARTODB_DARK_MATTER
             MapStyle.CARTO_LIGHT -> MapStyle.CARTO_DARK_NOLABELS
-            MapStyle.CARTO_VOYAGER -> MapStyle.CARTO_DARK_VOYAGER
+            MapStyle.CARTO_VOYAGER -> MapStyle.CARTODB_DARK_MATTER  // Voyager -> Dark Matter
 
-            // Dark to Light
-            MapStyle.CARTO_DARK -> MapStyle.CARTODB_POSITRON
+            // Dark to Light - Fixed mapping
+            MapStyle.CARTODB_DARK_MATTER -> MapStyle.CARTODB_POSITRON
             MapStyle.CARTO_DARK_NOLABELS -> MapStyle.CARTO_LIGHT
-            MapStyle.CARTO_DARK_VOYAGER -> MapStyle.CARTO_VOYAGER
 
             // Fallback
-            else -> if (currentMapStyle.isDark) MapStyle.CARTODB_POSITRON else MapStyle.CARTO_DARK
+            else -> if (currentMapStyle.isDark) MapStyle.CARTODB_POSITRON else MapStyle.CARTODB_DARK_MATTER
         }
         android.util.Log.d("MapActivity", "Selected new style: ${newStyle.displayName} (isDark: ${newStyle.isDark})")
         changeMapStyle(newStyle)
