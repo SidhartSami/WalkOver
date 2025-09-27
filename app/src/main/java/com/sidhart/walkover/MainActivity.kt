@@ -4,22 +4,33 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -27,13 +38,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import com.sidhart.walkover.data.LocationPoint
 import com.sidhart.walkover.data.Walk
 import com.sidhart.walkover.service.FirebaseService
 import com.sidhart.walkover.service.LocationService
-import com.sidhart.walkover.ui.LeaderboardActivity
-import com.sidhart.walkover.ui.MapActivity
+import com.sidhart.walkover.ui.*
 import com.sidhart.walkover.ui.theme.WalkOverTheme
+import com.sidhart.walkover.utils.MapUtils
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -41,31 +58,48 @@ import kotlinx.coroutines.launch
 import java.text.DecimalFormat
 
 class MainActivity : ComponentActivity() {
-    
+
     private lateinit var locationService: LocationService
     private lateinit var firebaseService: FirebaseService
-    
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        if (!allGranted) {
-            Toast.makeText(this, "Location permission is required", Toast.LENGTH_LONG).show()
+        val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+
+        if (fineLocationGranted || coarseLocationGranted) {
+            Toast.makeText(this, "Location permissions granted", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Location permissions are required for tracking and showing current location", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Add location settings launcher
+    private val locationSettingsLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Check if location is now enabled
+        if (isLocationEnabled()) {
+            Toast.makeText(this, "Location services enabled", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Location services are required for accurate positioning", Toast.LENGTH_LONG).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
+        // Initialize osmdroid configuration for maps
+        initializeOsmdroidConfiguration()
+
         locationService = LocationService(this)
         firebaseService = FirebaseService()
-        
-        // Check permissions
-        if (!hasLocationPermission()) {
-            requestLocationPermission()
-        }
-        
+
+        // Check and request permissions on startup
+        checkLocationRequirements()
+
         // Initialize Firebase authentication
         lifecycleScope.launch {
             try {
@@ -73,47 +107,46 @@ class MainActivity : ComponentActivity() {
                 val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                 val network = connectivityManager.activeNetwork
                 if (network == null) {
-                    Toast.makeText(this@MainActivity, "❌ No internet connection", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "No internet connection", Toast.LENGTH_LONG).show()
                     return@launch
                 }
                 val networkCapabilities = connectivityManager.getNetworkCapabilities(network)
                 if (networkCapabilities == null || !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-                    Toast.makeText(this@MainActivity, "❌ No internet connection", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "No internet connection", Toast.LENGTH_LONG).show()
                     return@launch
                 }
-                
+
                 // Check if Firebase is properly initialized
                 if (!firebaseService.isUserAuthenticated()) {
-                    Toast.makeText(this@MainActivity, "🔄 Signing in to Firebase...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Signing in to Firebase...", Toast.LENGTH_SHORT).show()
                     firebaseService.signInAnonymously().fold(
-                        onSuccess = { 
-                            Toast.makeText(this@MainActivity, "✅ Signed in anonymously", Toast.LENGTH_SHORT).show()
+                        onSuccess = {
+                            Toast.makeText(this@MainActivity, "Signed in anonymously", Toast.LENGTH_SHORT).show()
                         },
                         onFailure = { error ->
-                            Toast.makeText(this@MainActivity, "❌ Firebase sign-in failed: ${error.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "Firebase sign-in failed: ${error.message}", Toast.LENGTH_LONG).show()
                             // Log the full error for debugging
                             android.util.Log.e("FirebaseError", "Sign-in failed", error)
                         }
                     )
                 } else {
-                    Toast.makeText(this@MainActivity, "✅ Already signed in", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Already signed in", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "❌ App initialization error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "App initialization error: ${e.message}", Toast.LENGTH_LONG).show()
                 android.util.Log.e("AppError", "Initialization failed", e)
             }
         }
-        
+
         setContent {
             WalkOverTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    FitnessMapScreen(
-                        modifier = Modifier.padding(innerPadding),
-                        locationService = locationService,
-                        firebaseService = firebaseService,
-                        context = this@MainActivity
-                    )
-                }
+                MainNavigationScreen(
+                    locationService = locationService,
+                    firebaseService = firebaseService,
+                    context = this@MainActivity,
+                    onRequestLocationPermission = { checkLocationRequirements() },
+                    onRequestLocationSettings = { promptForLocationSettings() }
+                )
             }
         }
     }
@@ -122,7 +155,28 @@ class MainActivity : ComponentActivity() {
         return ActivityCompat.checkSelfPermission(
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+        ) == PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isLocationEnabled(): Boolean {
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+
+    private fun checkLocationRequirements() {
+        when {
+            !hasLocationPermission() -> {
+                requestLocationPermission()
+            }
+            !isLocationEnabled() -> {
+                promptForLocationSettings()
+            }
+        }
     }
 
     private fun requestLocationPermission() {
@@ -133,28 +187,323 @@ class MainActivity : ComponentActivity() {
             )
         )
     }
+
+    private fun promptForLocationSettings() {
+        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+        locationSettingsLauncher.launch(intent)
+    }
+
+    private fun initializeOsmdroidConfiguration() {
+        // Initialize osmdroid configuration
+        org.osmdroid.config.Configuration.getInstance().load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
+
+        // Set user agent for tile requests (required for OpenStreetMap)
+        org.osmdroid.config.Configuration.getInstance().userAgentValue = "WalkOver/1.0"
+
+        // Enable tile caching with more aggressive settings
+        org.osmdroid.config.Configuration.getInstance().cacheMapTileCount = 2000
+        org.osmdroid.config.Configuration.getInstance().cacheMapTileOvershoot = 200
+
+        // Set cache directory
+        org.osmdroid.config.Configuration.getInstance().osmdroidBasePath = getExternalFilesDir(null)
+        org.osmdroid.config.Configuration.getInstance().osmdroidTileCache = getExternalFilesDir(null)
+
+        // Set tile download thread count
+        org.osmdroid.config.Configuration.getInstance().tileDownloadThreads = 8
+        org.osmdroid.config.Configuration.getInstance().tileFileSystemThreads = 4
+    }
+}
+
+// Theme preference options
+enum class ThemePreference(val displayName: String) {
+    LIGHT("Light Mode"),
+    DARK("Dark Mode"),
+    SYSTEM("System Preference")
+}
+
+// Label preference options
+enum class LabelMode(val displayName: String) {
+    WITH_LABELS("With Labels"),
+    NO_LABELS("No Labels")
+}
+
+// Function to get map style based on user preferences
+fun getMapStyleFromPreferences(
+    themePreference: ThemePreference,
+    labelMode: LabelMode,
+    isSystemInDarkTheme: Boolean
+): MapStyle {
+    val shouldUseDarkTheme = when (themePreference) {
+        ThemePreference.LIGHT -> false
+        ThemePreference.DARK -> true
+        ThemePreference.SYSTEM -> isSystemInDarkTheme
+    }
+
+    return when {
+        shouldUseDarkTheme && labelMode == LabelMode.WITH_LABELS -> MapStyle.CARTODB_DARK_MATTER
+        shouldUseDarkTheme && labelMode == LabelMode.NO_LABELS -> MapStyle.CARTO_DARK_NOLABELS
+        !shouldUseDarkTheme && labelMode == LabelMode.WITH_LABELS -> MapStyle.CARTODB_POSITRON
+        !shouldUseDarkTheme && labelMode == LabelMode.NO_LABELS -> MapStyle.CARTO_LIGHT
+        else -> MapStyle.CARTODB_POSITRON
+    }
+}
+
+// Navigation items
+sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
+    object Leaderboard : Screen("leaderboard", "Leaderboard", Icons.Default.Star)
+    object Map : Screen("map", "Map", Icons.Default.LocationOn)
+    object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FitnessMapScreen(
-    modifier: Modifier = Modifier,
+fun MainNavigationScreen(
     locationService: LocationService,
     firebaseService: FirebaseService,
-    context: Context
+    context: Context,
+    onRequestLocationPermission: () -> Unit,
+    onRequestLocationSettings: () -> Unit
+) {
+    val navController = rememberNavController()
+    var currentMapStyle by remember { mutableStateOf(MapStyle.CARTODB_POSITRON) }
+
+    // User preferences - defaults to system preference
+    var themePreference by remember { mutableStateOf(ThemePreference.SYSTEM) }
+    var labelMode by remember { mutableStateOf(LabelMode.WITH_LABELS) }
+
+    val isSystemInDarkTheme = isSystemInDarkTheme()
+
+    // Update map style whenever preferences change
+    LaunchedEffect(themePreference, labelMode, isSystemInDarkTheme) {
+        val newStyle = getMapStyleFromPreferences(themePreference, labelMode, isSystemInDarkTheme)
+        android.util.Log.d("MainActivity", "Updating map style: theme=$themePreference, labels=$labelMode, systemDark=$isSystemInDarkTheme, newStyle=${newStyle.displayName}")
+        currentMapStyle = newStyle
+    }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentDestination = navBackStackEntry?.destination
+
+                listOf(Screen.Leaderboard, Screen.Map, Screen.Settings).forEach { screen ->
+                    val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+
+                    NavigationBarItem(
+                        icon = {
+                            if (screen == Screen.Map) {
+                                // Special circular button for Map
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isSelected)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.secondary
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = screen.icon,
+                                        contentDescription = screen.title,
+                                        tint = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimary
+                                        else
+                                            MaterialTheme.colorScheme.onSecondary,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = screen.icon,
+                                    contentDescription = screen.title,
+                                    tint = if (isSelected)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        label = {
+                            Text(
+                                text = screen.title,
+                                color = if (isSelected)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        selected = isSelected,
+                        onClick = {
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Map.route,
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            composable(Screen.Leaderboard.route) {
+                LeaderboardScreenContent(
+                    firebaseService = firebaseService,
+                    context = context
+                )
+            }
+
+            composable(Screen.Map.route) {
+                MapScreenContent(
+                    currentMapStyle = currentMapStyle,
+                    onMapStyleChange = { newStyle -> currentMapStyle = newStyle },
+                    locationService = locationService,
+                    firebaseService = firebaseService,
+                    context = context,
+                    onRequestLocationPermission = onRequestLocationPermission,
+                    onRequestLocationSettings = onRequestLocationSettings
+                )
+            }
+
+            composable(Screen.Settings.route) {
+                SettingsScreen(
+                    currentMapStyle = currentMapStyle,
+                    onMapStyleChange = { newStyle -> currentMapStyle = newStyle },
+                    themePreference = themePreference,
+                    onThemePreferenceChange = { newTheme ->
+                        themePreference = newTheme
+                        android.util.Log.d("MainActivity", "Theme preference changed to: ${newTheme.displayName}")
+                    },
+                    selectedLabelMode = labelMode,
+                    onLabelModeChange = { newMode ->
+                        labelMode = newMode
+                        android.util.Log.d("MainActivity", "Label mode changed to: ${newMode.displayName}")
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MapScreenContent(
+    currentMapStyle: MapStyle,
+    onMapStyleChange: (MapStyle) -> Unit,
+    locationService: LocationService,
+    firebaseService: FirebaseService,
+    context: Context,
+    onRequestLocationPermission: () -> Unit,
+    onRequestLocationSettings: () -> Unit
 ) {
     var isTracking by remember { mutableStateOf(false) }
     var locationPoints by remember { mutableStateOf<List<LocationPoint>>(emptyList()) }
     var distance by remember { mutableStateOf(0.0) }
     var area by remember { mutableStateOf(0.0) }
-    
-    val decimalFormat = remember { DecimalFormat("#.##") }
-    
-    // Map functionality removed - will be added later
-    
+    var mapView by remember { mutableStateOf<org.osmdroid.views.MapView?>(null) }
+    var currentLocation by remember { mutableStateOf<LocationPoint?>(null) }
+    var isLoadingLocation by remember { mutableStateOf(false) }
+    var locationError by remember { mutableStateOf<String?>(null) }
+
+    // Check location permissions and settings
+    val hasLocationPermission = remember(context) {
+        ActivityCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    val isLocationEnabled = remember(context) {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+
+    // Function to get and show current location
+    fun getCurrentLocationAndShow() {
+        if (!hasLocationPermission) {
+            onRequestLocationPermission()
+            return
+        }
+
+        if (!isLocationEnabled) {
+            onRequestLocationSettings()
+            return
+        }
+
+        if (mapView == null) return
+
+        isLoadingLocation = true
+        locationError = null
+
+        try {
+            MapUtils.getCurrentLocation(
+                context = context,
+                onSuccess = { location ->
+                    val locationPoint = LocationPoint(location.latitude, location.longitude)
+                    currentLocation = locationPoint
+
+                    // Clear any existing location markers first
+                    mapView?.overlays?.removeAll { overlay ->
+                        overlay is org.osmdroid.views.overlay.Marker &&
+                                (overlay.title == "Current Location" || overlay.title == "Your Location")
+                    }
+
+                    // Add professional location marker using MapUtils
+                    MapUtils.addMarker(
+                        mapView = mapView!!,
+                        geoPoint = MapUtils.convertLocationPointToGeoPoint(locationPoint),
+                        title = "Your Location",
+                        snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}",
+                        isLocationMarker = true
+                    )
+
+                    // Center map on current location with animation
+                    mapView?.controller?.animateTo(MapUtils.convertLocationPointToGeoPoint(locationPoint))
+                    mapView?.controller?.setZoom(18.0) // Zoom in closer for better visibility
+
+                    isLoadingLocation = false
+                    Toast.makeText(context, "Location found and centered", Toast.LENGTH_SHORT).show()
+                    android.util.Log.d("MapScreenContent", "Current location pin added: ${location.latitude}, ${location.longitude}")
+                },
+                onFailure = { error ->
+                    isLoadingLocation = false
+                    locationError = error.message
+                    android.util.Log.e("MapScreenContent", "Failed to get current location", error)
+                    Toast.makeText(context, "Failed to get location: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            )
+        } catch (e: Exception) {
+            isLoadingLocation = false
+            locationError = e.message
+            android.util.Log.e("MapScreenContent", "Error getting current location", e)
+            Toast.makeText(context, "Error getting location: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Get current location on map initialization if permissions are available
+    LaunchedEffect(mapView, hasLocationPermission, isLocationEnabled) {
+        if (mapView != null && hasLocationPermission && isLocationEnabled) {
+            getCurrentLocationAndShow()
+        }
+    }
+
     // Location tracking effect
     LaunchedEffect(isTracking) {
-        if (isTracking) {
+        if (isTracking && hasLocationPermission && isLocationEnabled) {
             try {
                 locationService.getLocationUpdates()
                     .onEach { location ->
@@ -171,89 +520,274 @@ fun FitnessMapScreen(
             }
         }
     }
-    
-    // Map functionality removed - will be added later
-    
-    Box(modifier = modifier.fillMaxSize()) {
-        // Map functionality removed - will be added later
-        
-        // Stats Card
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Map View
+        AndroidView(
+            factory = { ctx ->
+                org.osmdroid.views.MapView(ctx).apply {
+                    try {
+                        // Set tile source immediately based on current style
+                        setTileSource(currentMapStyle.tileSource)
+
+                        // Enable multi-touch gestures
+                        setMultiTouchControls(true)
+                        setClickable(true)
+
+                        // Set initial zoom and location
+                        controller.setZoom(15.0)
+
+                        // Set default location (Karachi)
+                        val defaultCenter = org.osmdroid.util.GeoPoint(24.8607, 67.0011)
+                        controller.setCenter(defaultCenter)
+
+                        mapView = this
+                    } catch (e: Exception) {
+                        android.util.Log.e("MapView", "Error initializing map", e)
+                        Toast.makeText(ctx, "Error initializing map: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            modifier = Modifier.weight(1f),
+            update = { mv ->
+                // Update map style if changed
+                try {
+                    val currentTileSource = mv.tileProvider.tileSource
+                    val newTileSource = currentMapStyle.tileSource
+
+                    android.util.Log.d("MapView", "Checking tile source: current=${currentTileSource.name()}, new=${newTileSource.name()}")
+
+                    if (currentTileSource.name() != newTileSource.name()) {
+                        android.util.Log.d("MapView", "Updating map tile source from ${currentTileSource.name()} to ${newTileSource.name()}")
+
+                        // Store current map state
+                        val currentCenter = mv.mapCenter
+                        val currentZoom = mv.zoomLevelDouble
+
+                        // Clear tile cache for the new style to ensure fresh tiles
+                        mv.tileProvider.clearTileCache()
+
+                        // Set new tile source
+                        mv.setTileSource(newTileSource)
+
+                        // Restore map state and force refresh
+                        mv.controller.setCenter(currentCenter)
+                        mv.controller.setZoom(currentZoom)
+                        mv.invalidate()
+
+                        // Force tile refresh by triggering a zoom change and back
+                        mv.controller.zoomIn()
+                        mv.controller.zoomOut()
+
+                        android.util.Log.d("MapView", "Successfully updated map style to ${currentMapStyle.displayName}")
+                    } else {
+                        android.util.Log.d("MapView", "Tile source already matches, no update needed")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MapView", "Error updating map style", e)
+                }
+            }
+        )
+
+        // Stats and Controls Card
         Card(
             modifier = Modifier
-                .padding(16.dp)
-                .align(Alignment.TopStart),
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                .fillMaxWidth()
+                .padding(16.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Distance: ${decimalFormat.format(distance)} m",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "Walk Statistics",
+                    style = MaterialTheme.typography.headlineSmall
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Area: ${decimalFormat.format(area)} m²",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-        
-        // Control Buttons
-        Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .align(Alignment.BottomStart),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    isTracking = true
-                    locationPoints = emptyList()
-                },
-                enabled = !isTracking
-            ) {
-                Text("Start Walk")
-            }
-            
-            Button(
-                onClick = {
-                    isTracking = false
-                    if (locationPoints.size >= 2) {
-                        saveWalk(locationPoints, distance, area, firebaseService, context)
-                    } else {
-                        Toast.makeText(context, "Walk too short to save", Toast.LENGTH_SHORT).show()
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Distance: ${String.format("%.2f", distance)} m")
+                Text("Area: ${String.format("%.2f", area)} m²")
+                Text("Points: ${locationPoints.size}")
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Button(
+                        onClick = {
+                            if (!hasLocationPermission) {
+                                onRequestLocationPermission()
+                                return@Button
+                            }
+                            if (!isLocationEnabled) {
+                                onRequestLocationSettings()
+                                return@Button
+                            }
+                            isTracking = true
+                            locationPoints = emptyList()
+                        },
+                        enabled = !isTracking
+                    ) {
+                        Text("Start Walk")
                     }
-                },
-                enabled = isTracking
-            ) {
-                Text("Stop Walk")
-            }
-        }
-        
-        // Navigation Buttons
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .align(Alignment.BottomEnd),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    context.startActivity(Intent(context, MapActivity::class.java))
+
+                    Button(
+                        onClick = {
+                            isTracking = false
+                            if (locationPoints.size >= 2) {
+                                saveWalk(locationPoints, distance, area, firebaseService, context)
+                            } else {
+                                Toast.makeText(context, "Walk too short to save", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = isTracking
+                    ) {
+                        Text("Stop Walk")
+                    }
                 }
-            ) {
-                Text("Open Map")
-            }
-            
-            Button(
-                onClick = {
-                    context.startActivity(Intent(context, LeaderboardActivity::class.java))
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Enhanced location button with better status indication
+                Button(
+                    onClick = { getCurrentLocationAndShow() },
+                    enabled = !isLoadingLocation,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary
+                    )
+                ) {
+                    if (isLoadingLocation) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onSecondary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Getting Location...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "Show my location",
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Show My Location")
+                    }
                 }
-            ) {
-                Text("Leaderboard")
+
+                // Location status information
+                Spacer(modifier = Modifier.height(8.dp))
+
+                when {
+                    !hasLocationPermission -> {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Warning",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Location permission required",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                    !isLocationEnabled -> {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Location Off",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Location services are disabled",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                    currentLocation != null -> {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = "Location Found",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Location: ${String.format("%.4f", currentLocation!!.latitude)}, ${String.format("%.4f", currentLocation!!.longitude)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
+                locationError?.let { error ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Error",
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = error,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -261,7 +795,7 @@ fun FitnessMapScreen(
 
 private fun calculateTotalDistance(points: List<LocationPoint>): Double {
     if (points.size < 2) return 0.0
-    
+
     var totalDistance = 0.0
     for (i in 1 until points.size) {
         totalDistance += LocationService.calculateDistance(points[i - 1], points[i])
@@ -277,17 +811,17 @@ private fun saveWalk(
     context: Context
 ) {
     val walk = Walk(
-        polylineCoordinates = points.map { 
-            com.google.firebase.firestore.GeoPoint(it.latitude, it.longitude) 
+        polylineCoordinates = points.map {
+            com.google.firebase.firestore.GeoPoint(it.latitude, it.longitude)
         },
         distanceCovered = distance,
         areaCaptured = area
     )
-    
+
     // Use coroutine scope from context
     (context as ComponentActivity).lifecycleScope.launch {
         firebaseService.saveWalk(walk).fold(
-            onSuccess = { 
+            onSuccess = {
                 Toast.makeText(context, "Walk saved successfully!", Toast.LENGTH_SHORT).show()
             },
             onFailure = { error ->
@@ -295,4 +829,162 @@ private fun saveWalk(
             }
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LeaderboardScreenContent(
+    modifier: Modifier = Modifier,
+    firebaseService: FirebaseService,
+    context: Context
+) {
+    var users by remember { mutableStateOf<List<com.sidhart.walkover.data.User>>(emptyList()) }
+    var currentScoreType by remember { mutableStateOf(ScoreType.AREA) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    val decimalFormat = remember { DecimalFormat("#.##") }
+
+    // Load leaderboard when score type changes
+    LaunchedEffect(currentScoreType) {
+        isLoading = true
+        val result = when (currentScoreType) {
+            ScoreType.AREA -> firebaseService.getLeaderboard()
+            ScoreType.DISTANCE -> firebaseService.getDistanceLeaderboard()
+        }
+
+        result.fold(
+            onSuccess = { userList ->
+                users = userList
+                isLoading = false
+                if (userList.isEmpty()) {
+                    Toast.makeText(context, "No data available", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onFailure = { error ->
+                isLoading = false
+                Toast.makeText(context, "Failed to load leaderboard: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Leaderboard",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Toggle buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { currentScoreType = ScoreType.AREA },
+                modifier = Modifier.weight(1f),
+                enabled = currentScoreType != ScoreType.AREA
+            ) {
+                Text("Area")
+            }
+
+            Button(
+                onClick = { currentScoreType = ScoreType.DISTANCE },
+                modifier = Modifier.weight(1f),
+                enabled = currentScoreType != ScoreType.DISTANCE
+            ) {
+                Text("Distance")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Leaderboard list
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(users) { index, user ->
+                    LeaderboardItem(
+                        rank = index + 1,
+                        user = user,
+                        scoreType = currentScoreType,
+                        decimalFormat = decimalFormat
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LeaderboardItem(
+    rank: Int,
+    user: com.sidhart.walkover.data.User,
+    scoreType: ScoreType,
+    decimalFormat: DecimalFormat
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = rank.toString(),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(32.dp)
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = user.username.ifEmpty { "Anonymous" },
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                val score = when (scoreType) {
+                    ScoreType.AREA -> user.totalAreaCaptured
+                    ScoreType.DISTANCE -> user.totalDistanceWalked
+                }
+
+                val unit = when (scoreType) {
+                    ScoreType.AREA -> "m²"
+                    ScoreType.DISTANCE -> "m"
+                }
+
+                Text(
+                    text = "${decimalFormat.format(score)} $unit",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+enum class ScoreType {
+    AREA, DISTANCE
 }
