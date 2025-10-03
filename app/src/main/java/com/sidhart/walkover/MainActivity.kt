@@ -307,10 +307,14 @@ fun MapScreenContent(
     context: Context
 ) {
     var isTracking by remember { mutableStateOf(false) }
+    var isPaused by remember { mutableStateOf(false) }
     var locationPoints by remember { mutableStateOf<List<LocationPoint>>(emptyList()) }
     var distance by remember { mutableStateOf(0.0) }
     var area by remember { mutableStateOf(0.0) }
     var mapView by remember { mutableStateOf<org.osmdroid.views.MapView?>(null) }
+    var currentLocationMarker by remember { mutableStateOf<org.osmdroid.views.overlay.Marker?>(null) }
+    var walkPolyline by remember { mutableStateOf<org.osmdroid.views.overlay.Polyline?>(null) }
+    var capturedAreaPolygon by remember { mutableStateOf<org.osmdroid.views.overlay.Polygon?>(null) }
     
     // Check location permissions
     val hasLocationPermission = ActivityCompat.checkSelfPermission(
@@ -323,14 +327,79 @@ fun MapScreenContent(
             ) == PackageManager.PERMISSION_GRANTED
 
     // Location tracking effect
-    LaunchedEffect(isTracking) {
-        if (isTracking && hasLocationPermission) {
+    LaunchedEffect(isTracking, isPaused) {
+        if (isTracking && !isPaused && hasLocationPermission) {
             try {
                 locationService.getLocationUpdates()
                     .onEach { location ->
                         locationPoints = locationPoints + location
                         distance = calculateTotalDistance(locationPoints)
                         area = LocationService.calculateArea(locationPoints)
+                        
+                        // Update marker position
+                        mapView?.let { map ->
+                            val geoPoint = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
+                            
+                            // Update or create location marker
+                            if (currentLocationMarker == null) {
+                                currentLocationMarker = MapUtils.addMarker(
+                                    mapView = map,
+                                    geoPoint = geoPoint,
+                                    title = "Current Location",
+                                    snippet = "Tracking...",
+                                    isLocationMarker = true
+                                )
+                            } else {
+                                currentLocationMarker?.position = geoPoint
+                                currentLocationMarker?.snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}"
+                            }
+                            
+                            // Update polyline to show path outline
+                            if (locationPoints.size >= 2) {
+                                // Remove old polyline
+                                walkPolyline?.let { map.overlays.remove(it) }
+                                
+                                // Create new polyline with all points
+                                val geoPoints = locationPoints.map { point ->
+                                    org.osmdroid.util.GeoPoint(point.latitude, point.longitude)
+                                }
+                                
+                                walkPolyline = org.osmdroid.views.overlay.Polyline(map).apply {
+                                    setPoints(geoPoints)
+                                    outlinePaint.color = android.graphics.Color.BLUE
+                                    outlinePaint.strokeWidth = 10f
+                                    title = "Current Walk Border"
+                                }
+                                map.overlays.add(walkPolyline)
+                            }
+                            
+                            // Update filled polygon to show captured area
+                            if (locationPoints.size >= 3) {
+                                // Remove old polygon
+                                capturedAreaPolygon?.let { map.overlays.remove(it) }
+                                
+                                // Create new filled polygon
+                                val geoPoints = locationPoints.map { point ->
+                                    org.osmdroid.util.GeoPoint(point.latitude, point.longitude)
+                                }
+                                
+                                capturedAreaPolygon = org.osmdroid.views.overlay.Polygon(map).apply {
+                                    points = geoPoints
+                                    // Semi-transparent green fill for captured territory
+                                    fillPaint.color = android.graphics.Color.argb(80, 0, 255, 0)
+                                    // Green border
+                                    outlinePaint.color = android.graphics.Color.rgb(0, 200, 0)
+                                    outlinePaint.strokeWidth = 6f
+                                    title = "Captured Territory"
+                                }
+                                // Add polygon below polyline and marker
+                                map.overlays.add(0, capturedAreaPolygon)
+                            }
+                            
+                            // Center map on current location
+                            map.controller.animateTo(geoPoint)
+                            map.invalidate()
+                        }
                     }
                     .catch { error ->
                         Toast.makeText(context, "Location tracking error: ${error.message}", Toast.LENGTH_SHORT).show()
@@ -457,8 +526,26 @@ fun MapScreenContent(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text("Distance: ${String.format("%.2f", distance)} m")
-                Text("Area: ${String.format("%.2f", area)} m²")
+                Text("Area Captured: ${String.format("%.2f", area)} m²")
                 Text("Points: ${locationPoints.size}")
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Status indicator
+                val statusText = when {
+                    !isTracking -> "Ready to start"
+                    isPaused -> "⏸️ Paused"
+                    else -> "📍 Tracking..."
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        !isTracking -> MaterialTheme.colorScheme.onSurfaceVariant
+                        isPaused -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.primary
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -469,7 +556,21 @@ fun MapScreenContent(
                     Button(
                         onClick = {
                             isTracking = true
+                            isPaused = false
                             locationPoints = emptyList()
+                            distance = 0.0
+                            area = 0.0
+                            
+                            // Clear previous tracking visuals
+                            mapView?.let { map ->
+                                currentLocationMarker?.let { map.overlays.remove(it) }
+                                walkPolyline?.let { map.overlays.remove(it) }
+                                capturedAreaPolygon?.let { map.overlays.remove(it) }
+                                currentLocationMarker = null
+                                walkPolyline = null
+                                capturedAreaPolygon = null
+                                map.invalidate()
+                            }
                         },
                         enabled = !isTracking && hasLocationPermission
                     ) {
@@ -478,20 +579,67 @@ fun MapScreenContent(
 
                     Button(
                         onClick = {
+                            isPaused = !isPaused
+                        },
+                        enabled = isTracking && hasLocationPermission
+                    ) {
+                        Text(if (isPaused) "▶️ Resume" else "⏸️ Pause")
+                    }
+
+                    Button(
+                        onClick = {
                             isTracking = false
+                            isPaused = false
                             if (locationPoints.size >= 2) {
+                                // Keep the captured area visible on the map
+                                Toast.makeText(context, "Walk stopped. Territory captured!", Toast.LENGTH_SHORT).show()
                                 saveWalk(locationPoints, distance, area, firebaseService, context)
                             } else {
                                 Toast.makeText(context, "Walk too short to save", Toast.LENGTH_SHORT).show()
                             }
+                            // Remove the moving marker when stopped
+                            mapView?.let { map ->
+                                currentLocationMarker?.let { map.overlays.remove(it) }
+                                currentLocationMarker = null
+                                map.invalidate()
+                            }
                         },
-                        enabled = isTracking
+                        enabled = isTracking && hasLocationPermission
                     ) {
-                        Text("Stop Walk")
+                        Text("Stop & Save")
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))
+                
+                // Reset Map Button (clears captured territory)
+                Button(
+                    onClick = {
+                        // Clear all overlays and reset
+                        mapView?.let { map ->
+                            currentLocationMarker?.let { map.overlays.remove(it) }
+                            walkPolyline?.let { map.overlays.remove(it) }
+                            capturedAreaPolygon?.let { map.overlays.remove(it) }
+                            currentLocationMarker = null
+                            walkPolyline = null
+                            capturedAreaPolygon = null
+                            map.invalidate()
+                        }
+                        locationPoints = emptyList()
+                        distance = 0.0
+                        area = 0.0
+                        Toast.makeText(context, "Map reset. Territory cleared!", Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = !isTracking && locationPoints.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("🗑️ Reset Map")
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
                 
                 // Center on Location Button
                 Button(
