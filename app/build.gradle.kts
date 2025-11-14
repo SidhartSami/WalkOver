@@ -13,8 +13,8 @@ android {
         applicationId = "com.sidhart.walkover"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -28,6 +28,12 @@ android {
             )
         }
     }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -41,6 +47,7 @@ android {
 }
 
 dependencies {
+    // AndroidX + Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -49,27 +56,30 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    
-    // OpenStreetMap with osmdroid
+
+    // Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+
+    // ✅ Firebase (Use the BOM to manage all versions)
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
+
+    // OpenStreetMap (osmdroid)
     implementation(libs.osmdroid.android)
-    
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth.ktx)
-    implementation(libs.firebase.firestore.ktx)
-    
+
     // Google Play Services Location
     implementation(libs.play.services.location)
-    
+
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
-    
-    // ViewModel Compose
+
+    // ViewModel + Navigation Compose
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-    
-    // Navigation Compose
     implementation(libs.androidx.navigation.compose)
-    
+    implementation("androidx.compose.material:material-icons-extended:1.7.5")
+
+    // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -86,10 +86,18 @@ class LocationService(private val context: Context) {
                 close(exception)
             }
         } catch (securityException: SecurityException) {
-            Log.e("LocationService", "Security exception when requesting location updates", securityException)
+            Log.e(
+                "LocationService",
+                "Security exception when requesting location updates",
+                securityException
+            )
             close(securityException)
         } catch (exception: Exception) {
-            Log.e("LocationService", "Unexpected exception when requesting location updates", exception)
+            Log.e(
+                "LocationService",
+                "Unexpected exception when requesting location updates",
+                exception
+            )
             close(exception)
         }
 
@@ -139,7 +147,10 @@ class LocationService(private val context: Context) {
 
                     override fun onLocationAvailability(locationAvailability: LocationAvailability) {
                         if (!locationAvailability.isLocationAvailable) {
-                            Log.w("LocationService", "Location is not available for current location request")
+                            Log.w(
+                                "LocationService",
+                                "Location is not available for current location request"
+                            )
                             close(Exception("Location not available"))
                         }
                     }
@@ -169,10 +180,18 @@ class LocationService(private val context: Context) {
                 }
 
             } catch (securityException: SecurityException) {
-                Log.e("LocationService", "Security exception when requesting fresh location", securityException)
+                Log.e(
+                    "LocationService",
+                    "Security exception when requesting fresh location",
+                    securityException
+                )
                 close(securityException)
             } catch (exception: Exception) {
-                Log.e("LocationService", "Unexpected exception when requesting fresh location", exception)
+                Log.e(
+                    "LocationService",
+                    "Unexpected exception when requesting fresh location",
+                    exception
+                )
                 close(exception)
             }
         }
@@ -215,10 +234,18 @@ class LocationService(private val context: Context) {
 
 
         } catch (securityException: SecurityException) {
-            Log.e("LocationService", "Security exception when getting current location", securityException)
+            Log.e(
+                "LocationService",
+                "Security exception when getting current location",
+                securityException
+            )
             close(securityException)
         } catch (exception: Exception) {
-            Log.e("LocationService", "Unexpected exception when getting current location", exception)
+            Log.e(
+                "LocationService",
+                "Unexpected exception when getting current location",
+                exception
+            )
             close(exception)
         }
 
@@ -228,7 +255,11 @@ class LocationService(private val context: Context) {
                     fusedLocationClient.removeLocationUpdates(callback)
                 }
             } catch (exception: Exception) {
-                Log.e("LocationService", "Error removing location updates in getCurrentLocation", exception)
+                Log.e(
+                    "LocationService",
+                    "Error removing location updates in getCurrentLocation",
+                    exception
+                )
             }
         }
     }

@@ -1,53 +1,96 @@
 package com.sidhart.walkover.ui.theme
 
 import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.graphics.Color
 
+// InDrive-inspired dark theme
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = NeonGreen,
+    onPrimary = Black,
+    primaryContainer = DarkGray,
+    onPrimaryContainer = NeonGreen,
+
+    secondary = MediumGray,
+    onSecondary = White,
+    secondaryContainer = DarkGray,
+    onSecondaryContainer = NeonGreen,
+
+    tertiary = NeonGreen,
+    onTertiary = Black,
+
+    background = Black,
+    onBackground = White,
+
+    surface = DarkGray,
+    onSurface = White,
+    surfaceVariant = MediumGray,
+    onSurfaceVariant = LightGray,
+
+    error = ErrorRed,
+    onError = White,
+
+    outline = LightGray,
+    outlineVariant = MediumGray
 )
 
+// Light theme color scheme
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = LightNeonGreen,
+    onPrimary = White,
+    primaryContainer = Color(0xFFE8F5D0),
+    onPrimaryContainer = DarkText,
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    secondary = Color(0xFF5F6368),
+    onSecondary = White,
+    secondaryContainer = Color(0xFFE8EAED),
+    onSecondaryContainer = DarkText,
+
+    tertiary = LightNeonGreen,
+    onTertiary = White,
+
+    background = LightBackground,
+    onBackground = DarkText,
+
+    surface = LightSurface,
+    onSurface = DarkText,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = MediumText,
+
+    error = LightErrorRed,
+    onError = White,
+
+    outline = LightBorder,
+    outlineVariant = Color(0xFFCCCCCC)
 )
 
 @Composable
 fun WalkOverTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = isSystemInDarkTheme(), // Auto-detect system preference
+    dynamicColor: Boolean = false, // Set to true if you want Material You colors on Android 12+
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.statusBarColor = colorScheme.background.toArgb()
+            window.navigationBarColor = colorScheme.background.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+        }
     }
 
     MaterialTheme(

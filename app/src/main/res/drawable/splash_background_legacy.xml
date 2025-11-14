@@ -1,0 +1,24 @@
+<!-- res/drawable/splash_background_legacy.xml -->
+<!-- For Android 11 and below -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:opacity="opaque">
+
+    <!-- Background color -->
+    <item android:drawable="@color/splash_background"/>
+
+    <!-- Logo centered and larger -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/ic_launcher" />
+    </item>
+
+    <!-- Optional: Add app name at bottom -->
+    <!-- You'd need to create this as a drawable/image -->
+    <!--
+    <item android:bottom="50dp"
+        android:gravity="bottom|center_horizontal">
+        <bitmap android:src="@drawable/app_name_text"/>
+    </item>
+    -->
+</layer-list>

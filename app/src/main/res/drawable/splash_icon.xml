@@ -1,0 +1,19 @@
+<!-- res/drawable/splash_icon.xml -->
+<!-- This makes your icon appear LARGER on the splash screen -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/ic_launcher" />
+    </item>
+</layer-list>
+
+    <!-- Alternative: If you want even more control -->
+    <!-- Create res/drawable-v31/splash_icon.xml for Android 12+ -->
+    <!-- This uses adaptive icon foreground for larger appearance -->
+    <!--
+    <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+        <background android:drawable="@color/neon_green"/>
+        <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    </adaptive-icon>
+    -->

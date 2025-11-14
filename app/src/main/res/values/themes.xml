@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="default_web_client_id">
+        950347281551-57csukrgmjkg2n4nvkpp41r16np9ert3.apps.googleusercontent.com
+    </string>
 
-    <style name="Theme.WalkOver" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.WalkOver" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/white</item>
+        <item name="android:navigationBarColor">@color/white</item>
+        <item name="android:windowBackground">@color/white</item>
+    </style>
 </resources>

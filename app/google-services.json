@@ -12,7 +12,28 @@
           "package_name": "com.sidhart.walkover"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "950347281551-ib726ntcl65b3rqti0jefcr9sim7m0m6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sidhart.walkover",
+            "certificate_hash": "f0ea0d8e36f397d66960573619e8e71ae88b6406"
+          }
+        },
+        {
+          "client_id": "950347281551-qard33gmqs6c4npbet3a910015lrs69o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sidhart.walkover",
+            "certificate_hash": "36dd9fe79493d463ff06549b7fd033a95fe1f936"
+          }
+        },
+        {
+          "client_id": "950347281551-57csukrgmjkg2n4nvkpp41r16np9ert3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAcFOLJhXRjbtA2FIUZv0SQUjdbjIuZRsw"
@@ -20,11 +41,15 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "950347281551-57csukrgmjkg2n4nvkpp41r16np9ert3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
   ],
   "configuration_version": "1"
 }
-

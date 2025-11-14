@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash Screen Colors -->
+    <color name="splash_background">#000000</color>
+    <color name="neon_green">#C8FF00</color>
+    <color name="splash_icon_background">#C8FF00</color>
+
+    <!-- Other app colors -->
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="dark_gray">#1E1E1E</color>
+    <color name="medium_gray">#2D2D2D</color>
+</resources>
