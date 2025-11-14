@@ -1,0 +1,152 @@
+# WalkOver Territory Capture Game - Testing Checklist
+# Score each item: 0 (Not Working) | 0.5 (Partially Working) | 1 (Fully Working)
+
+## 🗺️ MAP FUNCTIONALITY
+[1 ] Map loads correctly with default location
+[1 ] Map style switching works (Positron/Voyager)
+[ 1] Current location button centers map on user
+[ 1] Map zoom and pan gestures work smoothly
+[ 1] Map tiles load without errors
+
+## 📍 LOCATION TRACKING
+[ 1] Location permission request works
+[ 1] GPS location is accurate (<20m)
+[ 1] Location updates in real-time during walk
+[ 1] Current location marker follows user
+[ 1] Location tracking starts/stops correctly
+
+## 🚶 WALK TRACKING
+[ 1] Start Walk button begins tracking
+[ 1] Pause/Resume functionality works
+[ 1] Stop & Save button ends tracking
+[ 0.5(works but i am not sure if the data is correct and aaccurate)] Walk statistics update in real-time (distance, area, points)
+[ 1] Walk path is drawn on map as polyline
+
+## 🏴 TERRITORY CAPTURE
+[ 1] Territory capture requires closed loop (3+ points)
+[0 ] Minimum area requirement (500m²) enforced
+[ 0] Minimum distance requirement (50m) enforced
+[ 1] Captured territories show as filled polygons
+[ 0.5(yes when i stop it shows green when i start again ti shows green but then it disapear so wghen user is walking he doesnt know which area is already captured that should be changed)] Territory color indicates ownership
+[ not tested yet] Multiple territories can be captured in separate walks
+[0 it resets the map] Territories persist between walks (don't reset)
+
+## ⚔️ TERRITORY CONFLICTS
+[ ] Territory overlap detection works
+[ ] Conflict resolution between players
+[ ] Territory strength system (100% initial)
+[ ] Territory decay over time
+[ ] Shield protection for new captures (1 hour)
+
+## 🎯 SCORING SYSTEM
+[ ] Area scoring (1 point per m²)
+[ ] Distance scoring (10 points per km)
+[ ] Territory bonus (100 points per territory)
+[ ] Capture bonus (500 points per successful capture)
+[ ] Time-based bonuses (peak hours, weekends)
+[ ] Total score calculation
+
+## 🏆 ACHIEVEMENTS
+[ ] First territory capture achievement
+[ ] Distance milestones (1km, 10km)
+[ ] Territory count achievements (5, 10)
+[ ] Combat achievements (capture from others)
+[ ] Defense achievements
+[ ] Achievement notifications
+
+## 👥 MULTIPLAYER FEATURES
+[ ] User authentication (anonymous)
+[ ] Territory ownership tracking
+[ ] Player statistics
+[ ] Real-time notifications
+[ ] Territory attack/defense alerts
+
+## 📊 LEADERBOARDS
+[ ] Score-based leaderboard
+[ ] Territory count leaderboard
+[ ] Distance leaderboard
+[ ] Area leaderboard
+[ ] Leaderboard updates in real-time
+
+## 🛡️ ANTI-CHEAT VALIDATION
+[ ] Speed validation (0.5-8 m/s)
+[ ] GPS accuracy validation (<20m)
+[ ] Teleportation detection
+[ ] Time consistency checks
+[ ] Path validation (no impossible jumps)
+[ ] Walk duration validation (2+ minutes)
+
+## 🎮 GAME MECHANICS
+[ ] Player level progression (5 levels)
+[ ] Territory vulnerability system
+[ ] Home base territory
+[ ] Territory strength decay
+[ ] Multiple capture methods
+[ ] Conflict resolution outcomes
+
+## 🔄 PERSISTENCE
+[ ] Walk data saves to Firebase
+[ ] Territory data persists
+[ ] User statistics update
+[ ] Achievement progress saves
+[ ] Leaderboard data syncs
+
+## 📱 UI/UX
+[ ] Territory info overlay
+[ ] Game statistics display
+[ ] Achievement progress bars
+[ ] Notification system
+[ ] Map controls (zoom, center, style)
+[ ] Walk controls (start, pause, stop)
+
+## 🧪 EDGE CASES
+[ ] Very short walks (<50m) rejected
+[ ] Very small areas (<500m²) rejected
+[ ] Poor GPS accuracy handling
+[ ] Network connectivity issues
+[ ] App background/foreground transitions
+[ ] Multiple rapid start/stop cycles
+
+## 🐛 BUG TESTING
+[ ] No crashes during normal use
+[ ] No memory leaks
+[ ] No UI freezing
+[ ] No data loss
+[ ] No infinite loading states
+[ ] No duplicate territories
+[ ] No score miscalculations
+
+## 📈 PERFORMANCE
+[ ] Smooth map rendering
+[ ] Fast location updates
+[ ] Quick Firebase sync
+[ ] Efficient battery usage
+[ ] Low memory consumption
+[ ] Responsive UI interactions
+
+## 🔧 TECHNICAL
+[ ] Firebase authentication works
+[ ] Database writes succeed
+[ ] Database reads succeed
+[ ] Error handling works
+[ ] Offline functionality
+[ ] Data validation
+
+---
+
+# TESTING NOTES:
+- Test with different walk patterns (circles, squares, complex shapes)
+- Test with multiple users on same device
+- Test with poor GPS conditions
+- Test with long walks (>1 hour)
+- Test with very short walks
+- Test territory capture in different areas
+- Test conflict scenarios with overlapping territories
+
+# SCORING GUIDE:
+- 0: Feature completely broken or missing
+- 0.5: Feature partially works with issues
+- 1: Feature works perfectly as intended
+
+# TOTAL SCORE: ___/100
+# PRIORITY FIXES NEEDED: [List any 0 scores here]
