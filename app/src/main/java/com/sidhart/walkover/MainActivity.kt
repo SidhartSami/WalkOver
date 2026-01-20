@@ -1,5 +1,8 @@
 package com.sidhart.walkover
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sidhart.walkover.viewmodel.ProfileViewModel
+import com.sidhart.walkover.viewmodel.ProfileViewModelFactory
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -12,6 +15,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.*
+import com.google.android.gms.tasks.Task
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -26,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,8 +67,10 @@ import android.content.ComponentName
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.Description
 
-// Top-level helper functions
 @Composable
 fun rememberLocationState(context: Context): State<Boolean> {
     return produceState(initialValue = isLocationEnabled(context)) {
@@ -85,8 +95,10 @@ class MainActivity : ComponentActivity() {
         private set
     var isServiceBound = false
         private set
-    private var locationStateCallback: ((Boolean) -> Unit)? = null
-    private var permissionCallback: ((Boolean) -> Unit)? = null
+
+    // Callbacks for permission and location state changes
+    private var onPermissionGrantedCallback: (() -> Unit)? = null
+    private var onLocationEnabledCallback: (() -> Unit)? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -107,23 +119,72 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
-        permissionCallback?.invoke(allGranted)
 
-        if (!allGranted) {
-            Toast.makeText(this, "Location permission is required for tracking", Toast.LENGTH_LONG).show()
+        if (allGranted) {
+            // Permission granted - now check GPS
+            onPermissionGrantedCallback?.invoke()
+            checkAndPromptGPS()
+        } else {
+            Toast.makeText(
+                this,
+                "Location permission is required for tracking walks",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
     private val locationSettingsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
-        locationStateCallback?.invoke(isLocationEnabled(this))
+        // User returned from location settings
+        if (isLocationEnabled(this)) {
+            onLocationEnabledCallback?.invoke()
+            // Location enabled callback
+        }
+    }
+
+    private val locationDialogLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        // User interacted with the location dialog
+        if (isLocationEnabled(this)) {
+            onLocationEnabledCallback?.invoke()
+            // Location enabled via dialog
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_WalkOver)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // SharedPreferences for onboarding state
+        val prefs = getSharedPreferences("walkover_prefs", MODE_PRIVATE)
+        
+        // Check onboarding state (only check, don't clear)
+        val termsAccepted = prefs.getBoolean("terms_accepted", false)
+        val onboardingCompleted = prefs.getBoolean("onboarding_completed", false)
+        
+        // Route to appropriate screen based on state
+        when {
+            !termsAccepted -> {
+                // Step 1: Terms & Conditions (first time only)
+                android.util.Log.d("OnboardingFlow", "First launch: Showing Terms & Conditions")
+                startActivity(Intent(this, TermsAndConditionsActivity::class.java))
+                finish()
+                return
+            }
+            !onboardingCompleted -> {
+                // Step 2: Onboarding Slides (first time only)
+                android.util.Log.d("OnboardingFlow", "Showing Onboarding Slides")
+                startActivity(Intent(this, OnboardingActivity::class.java))
+                finish()
+                return
+            }
+        }
+        
+        // Onboarding complete - proceed to main app
+        android.util.Log.d("OnboardingFlow", "Onboarding complete - Loading main app")
 
         initializeOsmdroidConfiguration()
 
@@ -141,26 +202,21 @@ class MainActivity : ComponentActivity() {
                     locationService = locationService,
                     firebaseService = firebaseService,
                     context = this@MainActivity,
-                    onRequestPermission = { callback ->
-                        permissionCallback = callback
-                        requestLocationPermission()
-                    },
-                    onRequestLocationSettings = {
-                        promptEnableLocation()
-                    }
+                    onRequestPermissions = ::requestLocationPermissions,
+                    onRequestLocationSettings = ::promptEnableLocation
                 )
             }
         }
     }
 
-    private fun hasLocationPermission(): Boolean {
+    fun hasLocationPermission(): Boolean {
         return ActivityCompat.checkSelfPermission(
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun requestLocationPermission() {
+    fun requestLocationPermissions() {
         permissionLauncher.launch(
             arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
@@ -169,9 +225,56 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun promptEnableLocation() {
-        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-        locationSettingsLauncher.launch(intent)
+    private fun checkAndPromptGPS() {
+        if (!isLocationEnabled(this)) {
+            promptEnableLocation()
+        } else {
+            onLocationEnabledCallback?.invoke()
+        }
+    }
+
+    fun promptEnableLocation() {
+        // Use Google Play Services to show native location dialog
+        val locationRequest = LocationRequest.create().apply {
+            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+            interval = 10000
+            fastestInterval = 5000
+        }
+
+        val builder = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .setAlwaysShow(true) // Show dialog even if location is disabled
+
+        val client: SettingsClient = LocationServices.getSettingsClient(this)
+        val task: Task<LocationSettingsResponse> = client.checkLocationSettings(builder.build())
+
+        task.addOnSuccessListener {
+            // Location is already enabled
+            onLocationEnabledCallback?.invoke()
+        }
+
+        task.addOnFailureListener { exception ->
+            if (exception is ResolvableApiException) {
+                try {
+                    // Show the native dialog by launching the IntentSender
+                    val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
+                    locationDialogLauncher.launch(intentSenderRequest)
+                } catch (sendEx: Exception) {
+                    // If dialog fails to show, fall back to settings
+                    Toast.makeText(this, "Please enable location in settings", Toast.LENGTH_LONG).show()
+                    val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                    locationSettingsLauncher.launch(intent)
+                }
+            }
+        }
+    }
+
+    fun setPermissionGrantedCallback(callback: () -> Unit) {
+        onPermissionGrantedCallback = callback
+    }
+
+    fun setLocationEnabledCallback(callback: () -> Unit) {
+        onLocationEnabledCallback = callback
     }
 
     private fun initializeOsmdroidConfiguration() {
@@ -199,20 +302,41 @@ fun AuthNavigationWrapper(
     locationService: LocationService,
     firebaseService: FirebaseService,
     context: Context,
-    onRequestPermission: ((Boolean) -> Unit) -> Unit,
+    onRequestPermissions: () -> Unit,
     onRequestLocationSettings: () -> Unit
 ) {
     val navController = rememberNavController()
     val isAuthenticated = remember { mutableStateOf<Boolean?>(null) }
+    val shouldRequestPermissions = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         try {
             val authStatus = firebaseService.isUserAuthenticated()
             kotlinx.coroutines.delay(300)
             isAuthenticated.value = authStatus
+            
+            // For returning users (already authenticated), check location immediately
+            if (authStatus) {
+                kotlinx.coroutines.delay(800) // Delay to ensure UI is ready
+                shouldRequestPermissions.value = true
+            }
         } catch (e: Exception) {
             android.util.Log.e("AuthNavWrapper", "Auth check failed", e)
             isAuthenticated.value = false
+        }
+    }
+
+    // Request permissions immediately after authentication
+    LaunchedEffect(shouldRequestPermissions.value) {
+        if (shouldRequestPermissions.value) {
+            kotlinx.coroutines.delay(500) // Small delay for navigation to complete
+            val mainActivity = context as? MainActivity
+            if (mainActivity?.hasLocationPermission() == false) {
+                onRequestPermissions()
+            } else if (mainActivity?.hasLocationPermission() == true && !isLocationEnabled(context)) {
+                onRequestLocationSettings()
+            }
+            shouldRequestPermissions.value = false
         }
     }
 
@@ -241,6 +365,9 @@ fun AuthNavigationWrapper(
                             popUpTo("login") { inclusive = true }
                             launchSingleTop = true
                         }
+                        // Trigger permission request after navigation
+                        kotlinx.coroutines.delay(300)
+                        shouldRequestPermissions.value = true
                     }
                 },
                 onNavigateToRegister = {
@@ -256,6 +383,9 @@ fun AuthNavigationWrapper(
                             popUpTo("login") { inclusive = true }
                             launchSingleTop = true
                         }
+                        // Trigger permission request after navigation
+                        kotlinx.coroutines.delay(300)
+                        shouldRequestPermissions.value = true
                     }
                 },
                 onNavigateToVerification = { email ->
@@ -294,6 +424,9 @@ fun AuthNavigationWrapper(
                             popUpTo(0) { inclusive = true }
                             launchSingleTop = true
                         }
+                        // Trigger permission request after navigation
+                        kotlinx.coroutines.delay(300)
+                        shouldRequestPermissions.value = true
                     }
                 },
                 onBackToLogin = {
@@ -318,7 +451,7 @@ fun AuthNavigationWrapper(
                         launchSingleTop = true
                     }
                 },
-                onRequestPermission = onRequestPermission,
+                onRequestPermissions = onRequestPermissions,
                 onRequestLocationSettings = onRequestLocationSettings
             )
         }
@@ -338,38 +471,68 @@ fun MainNavigationScreen(
     firebaseService: FirebaseService,
     context: Context,
     onLogout: () -> Unit,
-    onRequestPermission: ((Boolean) -> Unit) -> Unit,
-    onRequestLocationSettings: () -> Unit
+    onRequestPermissions: () -> Unit,
+    onRequestLocationSettings:  () -> Unit
 ) {
     val navController = rememberNavController()
     val isDarkTheme = isSystemInDarkTheme()
+
+    // Tutorial State - show only if not completed yet
+    val prefs = context.getSharedPreferences("walkover_prefs", android.content.Context.MODE_PRIVATE)
+    val hasSeenTutorial = prefs.getBoolean("tutorial_completed", false)
+    val shouldShowTutorial = !hasSeenTutorial
     
-    // Persistent walk state - service is source of truth
+    var showTutorial by remember { mutableStateOf(shouldShowTutorial) }
+    var currentStepIndex by remember { mutableStateOf(0) }
+
+    // Coordinate Capture
+    var startButtonCoords by remember { mutableStateOf(null as androidx.compose.ui.layout.LayoutCoordinates?) }
+    var statsPanelCoords by remember { mutableStateOf(null as androidx.compose.ui.layout.LayoutCoordinates?) }
+    var profileTabCoords by remember { mutableStateOf(null as androidx.compose.ui.layout.LayoutCoordinates?) }
+    
+    val tutorialSteps = remember {
+        listOf(
+             TutorialStep(
+                "step1",
+                "Start Walk",
+                "Tap here to start tracking your walk instantly.",
+                null
+            ),
+             TutorialStep(
+                "step2",
+                "Live Stats",
+                "Tap here to see live distance, time, and pace.",
+                null
+            ),
+             TutorialStep(
+                "step3",
+                "Profile",
+                "View your weekly progress and activity stats here.",
+                null
+            )
+        )
+    }
+
     val activity = context as? MainActivity
     var walkState by remember { mutableStateOf(LiveWalkState()) }
-    
-    // Always read from service as source of truth
+
     LaunchedEffect(activity?.isServiceBound, activity?.walkTrackingService) {
         val mainActivity = activity
         if (mainActivity?.isServiceBound == true && mainActivity.walkTrackingService != null) {
             val service = mainActivity.walkTrackingService!!
-            // Restore state from service immediately
             walkState = service.walkState.value
-            // Observe future updates from service
             service.walkState.collect { state ->
                 walkState = state
             }
         }
     }
-    
-    // Poll service state periodically to catch updates
+
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(500)
             val mainActivity = activity
             if (mainActivity?.isServiceBound == true && mainActivity.walkTrackingService != null) {
                 val serviceState = mainActivity.walkTrackingService!!.walkState.value
-                // Always sync with service state
                 if (serviceState != walkState) {
                     walkState = serviceState
                 }
@@ -392,111 +555,168 @@ fun MainNavigationScreen(
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar(
-                modifier = Modifier.navigationBarsPadding(),
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp
-            ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            bottomBar = {
+                NavigationBar(
+                    modifier = Modifier.navigationBarsPadding(),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 3.dp
+                ) {
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = navBackStackEntry?.destination
 
-                listOf(Screen.Profile, Screen.Map, Screen.Settings).forEach { screen ->
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = screen.icon,
-                                contentDescription = screen.title,
-                                modifier = Modifier.size(if (screen == Screen.Map) 26.dp else 24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = screen.title,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                    val items = listOf(Screen.Profile, Screen.Map, Screen.Settings)
+                    
+                    items.forEach { screen ->
+                        NavigationBarItem(
+                            modifier = Modifier.onGloballyPositioned { 
+                                if (screen == Screen.Profile) profileTabCoords = it
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = screen.icon,
+                                    contentDescription = screen.title,
+                                    modifier = Modifier.size(if (screen == Screen.Map) 26.dp else 24.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = screen.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            },
+                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                            onClick = {
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
+                    }
+                }
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Map.route,
+                modifier = Modifier.padding(innerPadding)
+            ) {
+                composable(Screen.Map.route) {
+                    EnhancedMapScreenContent(
+                        currentMapStyle = currentMapStyle,
+                        onMapStyleChange = { newStyle -> currentMapStyle = newStyle },
+                        locationService = locationService,
+                        firebaseService = firebaseService,
+                        context = context,
+                        onRequestPermissions = onRequestPermissions,
+                        onEnableLocation = onRequestLocationSettings,
+                        persistentWalkState = walkState,
+                        onWalkStateChange = { walkState = it },
+                        // Pass coordinate setters
+                        onFabPositioned = { startButtonCoords = it },
+                        onStatsPositioned = { statsPanelCoords = it }
+                    )
+                }
+
+                composable(Screen.Profile.route) {
+                    val profileViewModel: ProfileViewModel = viewModel(
+                        factory = ProfileViewModelFactory(firebaseService)
+                    )
+
+                    ProfileScreen(
+                        viewModel = profileViewModel,
+                        onNavigateToWalkHistory = {
+                            navController.navigate("walk_history")
+                        }
+                    )
+                }
+
+                composable("walk_history") {
+                    WalkHistoryScreen(
+                        firebaseService = firebaseService,
+                        onNavigateBack = {
+                            navController.popBackStack()
+                        },
+                        onViewWalkOnMap = { walkId ->
+                            navController.navigate("view_walk_map/$walkId")
+                        }
+                    )
+                }
+
+                composable("view_walk_map/{walkId}") { backStackEntry ->
+                    val walkId = backStackEntry.arguments?.getString("walkId") ?: ""
+                    ViewWalkMapScreen(
+                        walkId = walkId,
+                        firebaseService = firebaseService,
+                        onNavigateBack = {
+                            navController.popBackStack()
+                        }
+                    )
+                }
+
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        firebaseService = firebaseService,
+                        onLogout = onLogout
                     )
                 }
             }
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Map.route,
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable(Screen.Map.route) {
-                EnhancedMapScreenContent(
-                    currentMapStyle = currentMapStyle,
-                    onMapStyleChange = { newStyle -> currentMapStyle = newStyle },
-                    locationService = locationService,
-                    firebaseService = firebaseService,
-                    context = context,
-                    onRequestPermission = onRequestPermission,
-                    onEnableLocation = onRequestLocationSettings,
-                    persistentWalkState = walkState,
-                    onWalkStateChange = { walkState = it }
-                )
-            }
-
-            composable(Screen.Profile.route) {
-                ProfileScreen(
-                    firebaseService = firebaseService,
-                    onNavigateToWalkHistory = {
-                        navController.navigate("walk_history")
-                    }
-                )
-            }
-
-            composable("walk_history") {
-                WalkHistoryScreen(
-                    firebaseService = firebaseService,
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onViewWalkOnMap = { walkId ->
-                        navController.navigate("view_walk_map/$walkId")
-                    }
-                )
-            }
+        
+        // Tutorial Layer
+        if (showTutorial && currentStepIndex < tutorialSteps.size) {
+            val currentStep = tutorialSteps[currentStepIndex].copy(
+                targetCoordinates = when(currentStepIndex) {
+                    0 -> startButtonCoords
+                    1 -> statsPanelCoords
+                    2 -> profileTabCoords
+                    else -> null
+                }
+            )
             
-            composable("view_walk_map/{walkId}") { backStackEntry ->
-                val walkId = backStackEntry.arguments?.getString("walkId") ?: ""
-                ViewWalkMapScreen(
-                    walkId = walkId,
-                    firebaseService = firebaseService,
-                    onNavigateBack = {
-                        navController.popBackStack()
+            TutorialOverlay(
+                currentStep = currentStep,
+                onNext = {
+                    currentStepIndex++
+                    if (currentStepIndex >= tutorialSteps.size) {
+                        showTutorial = false
+                        
+                        // Save tutorial completion
+                        context.getSharedPreferences("walkover_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("tutorial_completed", true)
+                            .apply()
+                        
+                        android.util.Log.d("OnboardingFlow", "Step 4 Complete: Interactive Tutorial")
+                        android.util.Log.d("OnboardingFlow", "All Onboarding Phases Complete!")
                     }
-                )
-            }
-
-            composable(Screen.Settings.route) {
-                SettingsScreen(
-                    firebaseService = firebaseService,
-                    onLogout = onLogout
-                )
-            }
+                },
+                onSkip = {
+                    showTutorial = false
+                    
+                    // Save tutorial as skipped (still completed)
+                    context.getSharedPreferences("walkover_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("tutorial_completed", true)
+                        .apply()
+                    
+                    android.util.Log.d("OnboardingFlow", "Step 4 Skipped: Tutorial")
+                    android.util.Log.d("OnboardingFlow", "All Onboarding Phases Complete!")
+                }
+            )
         }
     }
 }
@@ -509,46 +729,52 @@ fun EnhancedMapScreenContent(
     locationService: LocationService,
     firebaseService: FirebaseService,
     context: Context,
-    onRequestPermission: ((Boolean) -> Unit) -> Unit,
+    onRequestPermissions: () -> Unit,
     onEnableLocation: () -> Unit,
     persistentWalkState: LiveWalkState,
-    onWalkStateChange: (LiveWalkState) -> Unit
+    onWalkStateChange: (LiveWalkState) -> Unit,
+    onFabPositioned: (androidx.compose.ui.layout.LayoutCoordinates?) -> Unit = {},
+    onStatsPositioned: (androidx.compose.ui.layout.LayoutCoordinates?) -> Unit = {}
 ) {
     val isDarkTheme = isSystemInDarkTheme()
+    val mainActivity = context as? MainActivity
 
-    // Permission and location states - checked on map screen only
+    val sharedPrefs = context.getSharedPreferences("walkover_prefs", android.content.Context.MODE_PRIVATE)
+    var showPolicyDialog by remember {
+        mutableStateOf(!sharedPrefs.getBoolean("policy_accepted", false))
+    }
+
     var hasLocationPermission by remember {
-        mutableStateOf(
-            ActivityCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(mainActivity?.hasLocationPermission() ?: false)
     }
     val isLocationEnabled by rememberLocationState(context)
 
-    // Use persistent walk state from parent - always sync
     var walkState by remember { mutableStateOf(persistentWalkState) }
     var showFullScreenStats by remember { mutableStateOf(false) }
     var currentMapStyleState by remember { mutableStateOf(currentMapStyle) }
-    
-    // Always sync with persistent state from parent
+
+    // Map state
+    var mapView by remember { mutableStateOf<org.osmdroid.views.MapView?>(null) }
+    var currentLocationMarker by remember { mutableStateOf<org.osmdroid.views.overlay.Marker?>(null) }
+    var walkPolyline by remember { mutableStateOf<org.osmdroid.views.overlay.Polyline?>(null) }
+
+    // CRITICAL FIX: Use derivedStateOf to track when map is truly ready for marker placement
+    var isMapFullyReady by remember { mutableStateOf(false) }
+    var shouldPlaceInitialMarker by remember { mutableStateOf(false) }
+
     LaunchedEffect(persistentWalkState) {
         if (persistentWalkState != walkState) {
             walkState = persistentWalkState
         }
     }
-    
-    // Update parent immediately when state changes (for persistence)
+
     LaunchedEffect(walkState.isTracking, walkState.points.size, walkState.stats.elapsedTimeMillis) {
         onWalkStateChange(walkState)
     }
-    
-    // Start notification service when tracking starts
+
     val activity = context as? MainActivity
     LaunchedEffect(walkState.isTracking) {
         if (walkState.isTracking) {
-            // Start service for notifications
             val startIntent = Intent(context, WalkTrackingService::class.java).apply {
                 action = WalkTrackingService.ACTION_START_TRACKING
             }
@@ -559,34 +785,79 @@ fun EnhancedMapScreenContent(
             }
         }
     }
-    
-    // Sync local state to service for notifications
+
     LaunchedEffect(walkState.isTracking, walkState.stats.elapsedTimeMillis, walkState.points.size) {
         if (walkState.isTracking) {
             activity?.walkTrackingService?.syncState(walkState)
         }
     }
 
-    // Map overlays
-    var mapView by remember { mutableStateOf<org.osmdroid.views.MapView?>(null) }
-    var currentLocationMarker by remember { mutableStateOf<org.osmdroid.views.overlay.Marker?>(null) }
-    var walkPolyline by remember { mutableStateOf<org.osmdroid.views.overlay.Polyline?>(null) }
-    var hasInitializedLocation by remember { mutableStateOf(false) }
-
     val canStartWalk = hasLocationPermission && isLocationEnabled
     val showLocationWarning = !canStartWalk && !walkState.isTracking
 
-    // Monitor permission changes
+    // Monitor permission changes continuously
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(1000)
-            val newPermissionState = ActivityCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-
+            val newPermissionState = mainActivity?.hasLocationPermission() ?: false
             if (newPermissionState != hasLocationPermission) {
                 hasLocationPermission = newPermissionState
+                if (newPermissionState && isMapFullyReady) {
+                    shouldPlaceInitialMarker = true
+                }
+            }
+        }
+    }
+
+    // CRITICAL FIX: Set callbacks for permission/GPS events
+    LaunchedEffect(Unit) {
+        mainActivity?.setPermissionGrantedCallback {
+            hasLocationPermission = true
+            if (isMapFullyReady) {
+                shouldPlaceInitialMarker = true
+            }
+        }
+
+        mainActivity?.setLocationEnabledCallback {
+            if (hasLocationPermission && isMapFullyReady) {
+                shouldPlaceInitialMarker = true
+            }
+        }
+    }
+
+    // CRITICAL FIX: Place marker when conditions are met
+    LaunchedEffect(shouldPlaceInitialMarker, isMapFullyReady, hasLocationPermission, isLocationEnabled) {
+        if (shouldPlaceInitialMarker && isMapFullyReady && hasLocationPermission && isLocationEnabled && !walkState.isTracking) {
+            mapView?.let { map ->
+                MapUtils.getCurrentLocation(
+                    context = context,
+                    onSuccess = { location ->
+                        val currentLocation = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
+                        map.controller.animateTo(currentLocation)
+
+                        // Remove old marker if exists
+                        currentLocationMarker?.let { map.overlays.remove(it) }
+
+                        // Add new marker
+                        val marker = MapUtils.addModernMarker(
+                            mapView = map,
+                            geoPoint = currentLocation,
+                            title = "Current Location",
+                            snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}",
+                            isLocationMarker = true,
+                            isActiveTracking = false
+                        )
+                        currentLocationMarker = marker
+                        map.invalidate()
+
+                        // Initial location marker placed
+                        shouldPlaceInitialMarker = false // Reset flag
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("MapScreen", "Failed to get location", error)
+                        shouldPlaceInitialMarker = false
+                    }
+                )
             }
         }
     }
@@ -597,7 +868,7 @@ fun EnhancedMapScreenContent(
         }
     }
 
-    // Location tracking - RESTORE DIRECT TRACKING (was working before)
+    // Location tracking
     LaunchedEffect(walkState.isTracking, walkState.isPaused, hasLocationPermission, isLocationEnabled) {
         if (walkState.isTracking && !walkState.isPaused && hasLocationPermission && isLocationEnabled) {
             try {
@@ -608,14 +879,9 @@ fun EnhancedMapScreenContent(
 
                         val newState = walkState.copy(points = updatedPoints)
                             .updateStats(distance, 0.0, updatedPoints.size)
-                        
-                        // Update service first (source of truth)
+
                         activity?.walkTrackingService?.syncState(newState)
-                        
-                        // Then update local state (will be synced from service)
                         walkState = newState
-                        
-                        // Update parent state for persistence
                         onWalkStateChange(newState)
 
                         mapView?.let { map ->
@@ -643,12 +909,11 @@ fun EnhancedMapScreenContent(
                 pauseStartTime = System.currentTimeMillis()
             )
             walkState = pausedState
-            onWalkStateChange(pausedState) // Persist to parent
+            onWalkStateChange(pausedState)
             Toast.makeText(context, "Tracking paused - location unavailable", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Update map visuals when walk state changes
     LaunchedEffect(walkState.isTracking, walkState.points.size) {
         if (walkState.points.isNotEmpty() && walkState.isTracking) {
             val lastPoint = walkState.points.last()
@@ -663,31 +928,6 @@ fun EnhancedMapScreenContent(
                     onPolylineUpdate = { walkPolyline = it }
                 )
             }
-        }
-    }
-
-    LaunchedEffect(hasLocationPermission, isLocationEnabled, mapView) {
-        if (hasLocationPermission && isLocationEnabled && mapView != null && !hasInitializedLocation) {
-            MapUtils.getCurrentLocation(
-                context = context,
-                onSuccess = { location ->
-                    val currentLocation = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
-                    mapView?.controller?.setCenter(currentLocation)
-
-                    MapUtils.addModernMarker(
-                        mapView = mapView!!,
-                        geoPoint = currentLocation,
-                        title = "Current Location",
-                        snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}",
-                        isLocationMarker = true,
-                        isActiveTracking = false
-                    )
-
-                    hasInitializedLocation = true
-                    Toast.makeText(context, "Location found!", Toast.LENGTH_SHORT).show()
-                },
-                onFailure = { }
-            )
         }
     }
 
@@ -708,6 +948,15 @@ fun EnhancedMapScreenContent(
                         val defaultCenter = org.osmdroid.util.GeoPoint(24.8607, 67.0011)
                         controller.setCenter(defaultCenter)
                         mapView = this
+
+                        // Mark map as ready after post to ensure it's fully laid out
+                        post {
+                            isMapFullyReady = true
+                            // Trigger marker placement if conditions are already met
+                            if (hasLocationPermission && isLocationEnabled && !walkState.isTracking) {
+                                shouldPlaceInitialMarker = true
+                            }
+                        }
                     } catch (e: Exception) {
                         android.util.Log.e("MapView", "Error initializing map", e)
                     }
@@ -749,11 +998,7 @@ fun EnhancedMapScreenContent(
                     .fillMaxWidth(0.95f)
                     .clickable {
                         if (!hasLocationPermission) {
-                            onRequestPermission { granted ->
-                                if (granted && !isLocationEnabled) {
-                                    onEnableLocation()
-                                }
-                            }
+                            onRequestPermissions()
                         } else if (!isLocationEnabled) {
                             onEnableLocation()
                         }
@@ -808,6 +1053,7 @@ fun EnhancedMapScreenContent(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 16.dp)
+                .onGloballyPositioned { onStatsPositioned(it) }
         ) {
             Surface(
                 modifier = Modifier.clickable { showFullScreenStats = true },
@@ -931,7 +1177,26 @@ fun EnhancedMapScreenContent(
                                     onSuccess = { location ->
                                         val geoPoint = MapUtils.convertLocationToGeoPoint(location)
                                         MapUtils.centerMapOnLocation(map, geoPoint)
-                                        Toast.makeText(context, "Centered on location", Toast.LENGTH_SHORT).show()
+                                        
+                                        // Create marker if it doesn't exist
+                                        if (currentLocationMarker == null && !walkState.isTracking) {
+                                            // Remove old marker if somehow still on map
+                                            currentLocationMarker?.let { map.overlays.remove(it) }
+                                            
+                                            // Add new marker
+                                            val marker = MapUtils.addModernMarker(
+                                                mapView = map,
+                                                geoPoint = geoPoint,
+                                                title = "Current Location",
+                                                snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}",
+                                                isLocationMarker = true,
+                                                isActiveTracking = false
+                                            )
+                                            currentLocationMarker = marker
+                                            map.invalidate()
+                                        }
+                                        
+                                        // Map centered on location
                                     },
                                     onFailure = { error ->
                                         Toast.makeText(context, "Failed to get location", Toast.LENGTH_SHORT).show()
@@ -956,7 +1221,6 @@ fun EnhancedMapScreenContent(
                 }
             }
 
-            // Start Walk Button - DISABLED if no location
             AnimatedVisibility(
                 visible = !walkState.isTracking,
                 enter = scaleIn() + fadeIn(),
@@ -967,37 +1231,56 @@ fun EnhancedMapScreenContent(
                         if (!canStartWalk) {
                             if (!hasLocationPermission) {
                                 Toast.makeText(context, "Location permission required", Toast.LENGTH_SHORT).show()
-                                onRequestPermission { granted ->
-                                    if (granted && !isLocationEnabled) {
-                                        onEnableLocation()
-                                    }
-                                }
+                                onRequestPermissions()
                             } else if (!isLocationEnabled) {
                                 Toast.makeText(context, "Please enable GPS to start tracking", Toast.LENGTH_SHORT).show()
                                 onEnableLocation()
                             }
                         } else {
-                            // Start tracking - update service first (source of truth)
                             val newState = LiveWalkState(
                                 isTracking = true,
                                 isPaused = false,
                                 startTime = System.currentTimeMillis(),
                                 points = emptyList()
                             )
-                            
-                            // Update service first
+
                             activity?.walkTrackingService?.syncState(newState)
-                            
-                            // Then update local and parent
                             walkState = newState
                             onWalkStateChange(newState)
-                            
+
+                            // Clear map overlays and reset marker reference
                             mapView?.let { map ->
                                 currentLocationMarker?.let { map.overlays.remove(it) }
                                 walkPolyline?.let { map.overlays.remove(it) }
                                 currentLocationMarker = null
                                 walkPolyline = null
                                 map.invalidate()
+                                
+                                // Immediately get current location and create tracking marker
+                                MapUtils.getCurrentLocation(
+                                    context = context,
+                                    onSuccess = { location ->
+                                        val geoPoint = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
+                                        
+                                        // Create initial tracking marker
+                                        val marker = MapUtils.addModernMarker(
+                                            mapView = map,
+                                            geoPoint = geoPoint,
+                                            title = "Current Location",
+                                            snippet = "Tracking...",
+                                            isLocationMarker = true,
+                                            isActiveTracking = true
+                                        )
+                                        currentLocationMarker = marker
+                                        
+                                        // Center map on current location
+                                        map.controller.animateTo(geoPoint)
+                                        map.invalidate()
+                                    },
+                                    onFailure = { error ->
+                                        android.util.Log.e("StartTracking", "Failed to get initial location", error)
+                                    }
+                                )
                             }
                         }
                     },
@@ -1009,7 +1292,9 @@ fun EnhancedMapScreenContent(
                         MaterialTheme.colorScheme.onPrimary
                     else
                         MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(56.dp),
+                    modifier = Modifier
+                        .size(56.dp)
+                        .onGloballyPositioned { onFabPositioned(it) }, // Capture FAB position
                     elevation = FloatingActionButtonDefaults.elevation(
                         defaultElevation = 8.dp,
                         pressedElevation = 12.dp
@@ -1058,7 +1343,6 @@ fun EnhancedMapScreenContent(
                                     pauseStartTime = System.currentTimeMillis()
                                 )
                             }
-                            // Update service first (source of truth)
                             activity?.walkTrackingService?.syncState(newState)
                             walkState = newState
                             onWalkStateChange(newState)
@@ -1089,21 +1373,17 @@ fun EnhancedMapScreenContent(
 
                     FloatingActionButton(
                         onClick = {
-                            // Stop tracking
                             val finalState = walkState
                             val stoppedState = walkState.copy(isTracking = false, isPaused = false)
-                            
-                            // Stop service first
+
                             val stopIntent = Intent(context, WalkTrackingService::class.java).apply {
                                 action = WalkTrackingService.ACTION_STOP_TRACKING
                             }
                             context.startService(stopIntent)
-                            
-                            // Then update local state
+
                             walkState = stoppedState
                             onWalkStateChange(stoppedState)
 
-                            // MINIMUM 50m (0.05km) TO SAVE
                             if (finalState.stats.distanceKm >= 0.05) {
                                 (context as ComponentActivity).lifecycleScope.launch {
                                     saveEnhancedWalk(finalState, firebaseService, context)
@@ -1148,6 +1428,135 @@ fun EnhancedMapScreenContent(
                 onClose = { showFullScreenStats = false }
             )
         }
+        if (showPolicyDialog) {
+            PolicyAcceptanceDialog(
+                onAccept = {
+                    sharedPrefs.edit().putBoolean("policy_accepted", true).apply()
+                    showPolicyDialog = false
+                    Toast.makeText(
+                        context,
+                        "Thank you for accepting our policies",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onDecline = {
+                    sharedPrefs.edit().putBoolean("policy_accepted", false).apply()
+                    showPolicyDialog = false
+                    // Sign out and exit
+                    firebaseService.signOut()
+                    (context as? ComponentActivity)?.finish()
+                    Toast.makeText(
+                        context,
+                        "You must accept the Privacy Policy to use WalkOver",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            )
+        }
+    }
+}
+
+// Keep all other composables exactly as they were (CompactStatusIndicator, DetailedStatsSheet, etc.)
+// ... [Rest of the composables remain unchanged]
+
+private fun updateMapVisuals(
+    map: org.osmdroid.views.MapView,
+    location: LocationPoint,
+    points: List<LocationPoint>,
+    currentMarker: org.osmdroid.views.overlay.Marker?,
+    polyline: org.osmdroid.views.overlay.Polyline?,
+    onMarkerUpdate: (org.osmdroid.views.overlay.Marker?) -> Unit,
+    onPolylineUpdate: (org.osmdroid.views.overlay.Polyline?) -> Unit
+) {
+    val geoPoint = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
+
+    if (currentMarker == null) {
+        val newMarker = MapUtils.addModernMarker(
+            mapView = map,
+            geoPoint = geoPoint,
+            title = "Current Location",
+            snippet = "Tracking...",
+            isLocationMarker = true,
+            isActiveTracking = true
+        )
+        onMarkerUpdate(newMarker)
+    } else {
+        currentMarker.position = geoPoint
+        currentMarker.snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}"
+    }
+
+    if (points.size >= 2) {
+        polyline?.let { map.overlays.remove(it) }
+
+        val geoPoints = points.map { point ->
+            org.osmdroid.util.GeoPoint(point.latitude, point.longitude)
+        }
+
+        val newPolyline = org.osmdroid.views.overlay.Polyline(map).apply {
+            setPoints(geoPoints)
+            outlinePaint.color = MapUtils.getTrackingPolylineColor(map.context)
+            outlinePaint.strokeWidth = 10f
+            title = "Current Walk Path"
+        }
+        map.overlays.add(newPolyline)
+        onPolylineUpdate(newPolyline)
+    }
+
+    map.controller.animateTo(geoPoint)
+    map.invalidate()
+}
+
+private fun calculateTotalDistance(points: List<LocationPoint>): Double {
+    if (points.size < 2) return 0.0
+
+    var totalDistance = 0.0
+    for (i in 1 until points.size) {
+        totalDistance += LocationService.calculateDistance(points[i - 1], points[i])
+    }
+    return totalDistance
+}
+
+private suspend fun saveEnhancedWalk(
+    walkState: LiveWalkState,
+    firebaseService: FirebaseService,
+    context: Context
+) {
+    try {
+        val walk = Walk(
+            polylineCoordinates = walkState.points.map {
+                com.google.firebase.firestore.GeoPoint(it.latitude, it.longitude)
+            },
+            distanceCovered = walkState.stats.distanceMeters,
+            duration = walkState.stats.elapsedTimeMillis
+        )
+
+        val result = firebaseService.saveWalk(walk)
+
+        result.fold(
+            onSuccess = { walkId ->
+                Toast.makeText(
+                    context,
+                    "Walk saved successfully! (${String.format("%.2f", walkState.stats.distanceKm)} km)",
+                    Toast.LENGTH_LONG
+                ).show()
+                android.util.Log.d("MainActivity", "Walk saved with ID: $walkId, Distance: ${walkState.stats.distanceKm} km")
+            },
+            onFailure = { error ->
+                Toast.makeText(
+                    context,
+                    "Failed to save walk: ${error.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+                android.util.Log.e("MainActivity", "Failed to save walk", error)
+            }
+        )
+    } catch (e: Exception) {
+        Toast.makeText(
+            context,
+            "Error saving walk: ${e.message}",
+            Toast.LENGTH_LONG
+        ).show()
+        android.util.Log.e("MainActivity", "Exception while saving walk", e)
     }
 }
 
@@ -1409,7 +1818,129 @@ fun FullScreenStatsView(
         }
     }
 }
+@Composable
+fun PolicyAcceptanceDialog(
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    val context = LocalContext.current
 
+    AlertDialog(
+        onDismissRequest = { /* Prevent dismissal */ },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(24.dp),
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PrivacyTip,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Privacy Policy & Terms",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Before you continue, please review and accept our Privacy Policy and Terms of Service.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(context, PolicyViewerActivity::class.java).apply {
+                                putExtra("policy_type", "privacy")
+                            }
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PrivacyTip,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Privacy", fontSize = 12.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(context, PolicyViewerActivity::class.java).apply {
+                                putExtra("policy_type", "terms")
+                            }
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Description,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Terms", fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onAccept,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("I Accept", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDecline,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Decline",
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    )
+}
 @Composable
 fun StatCard(
     title: String,
@@ -1470,106 +2001,5 @@ fun InfoItem(
             fontWeight = FontWeight.SemiBold,
             color = valueColor
         )
-    }
-}
-
-private fun updateMapVisuals(
-    map: org.osmdroid.views.MapView,
-    location: LocationPoint,
-    points: List<LocationPoint>,
-    currentMarker: org.osmdroid.views.overlay.Marker?,
-    polyline: org.osmdroid.views.overlay.Polyline?,
-    onMarkerUpdate: (org.osmdroid.views.overlay.Marker?) -> Unit,
-    onPolylineUpdate: (org.osmdroid.views.overlay.Polyline?) -> Unit
-) {
-    val geoPoint = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
-
-    if (currentMarker == null) {
-        val newMarker = MapUtils.addModernMarker(
-            mapView = map,
-            geoPoint = geoPoint,
-            title = "Current Location",
-            snippet = "Tracking...",
-            isLocationMarker = true,
-            isActiveTracking = true
-        )
-        onMarkerUpdate(newMarker)
-    } else {
-        currentMarker.position = geoPoint
-        currentMarker.snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}"
-    }
-
-    if (points.size >= 2) {
-        polyline?.let { map.overlays.remove(it) }
-
-        val geoPoints = points.map { point ->
-            org.osmdroid.util.GeoPoint(point.latitude, point.longitude)
-        }
-
-        val newPolyline = org.osmdroid.views.overlay.Polyline(map).apply {
-            setPoints(geoPoints)
-            outlinePaint.color = MapUtils.getTrackingPolylineColor(map.context)
-            outlinePaint.strokeWidth = 10f
-            title = "Current Walk Path"
-        }
-        map.overlays.add(newPolyline)
-        onPolylineUpdate(newPolyline)
-    }
-
-    map.controller.animateTo(geoPoint)
-    map.invalidate()
-}
-
-private fun calculateTotalDistance(points: List<LocationPoint>): Double {
-    if (points.size < 2) return 0.0
-
-    var totalDistance = 0.0
-    for (i in 1 until points.size) {
-        totalDistance += LocationService.calculateDistance(points[i - 1], points[i])
-    }
-    return totalDistance
-}
-
-private suspend fun saveEnhancedWalk(
-    walkState: LiveWalkState,
-    firebaseService: FirebaseService,
-    context: Context
-) {
-    try {
-        val walk = Walk(
-            polylineCoordinates = walkState.points.map {
-                com.google.firebase.firestore.GeoPoint(it.latitude, it.longitude)
-            },
-            distanceCovered = walkState.stats.distanceMeters,
-            duration = walkState.stats.elapsedTimeMillis
-        )
-
-        val result = firebaseService.saveWalk(walk)
-
-        result.fold(
-            onSuccess = { walkId ->
-                Toast.makeText(
-                    context,
-                    "Walk saved successfully! (${String.format("%.2f", walkState.stats.distanceKm)} km)",
-                    Toast.LENGTH_LONG
-                ).show()
-                android.util.Log.d("MainActivity", "Walk saved with ID: $walkId, Distance: ${walkState.stats.distanceKm} km")
-            },
-            onFailure = { error ->
-                Toast.makeText(
-                    context,
-                    "Failed to save walk: ${error.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-                android.util.Log.e("MainActivity", "Failed to save walk", error)
-            }
-        )
-    } catch (e: Exception) {
-        Toast.makeText(
-            context,
-            "Error saving walk: ${e.message}",
-            Toast.LENGTH_LONG
-        ).show()
-        android.util.Log.e("MainActivity", "Exception while saving walk", e)
     }
 }

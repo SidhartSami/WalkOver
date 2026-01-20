@@ -42,6 +42,30 @@
             </intent-filter>
         </activity>
 
+        <!-- Policy Viewer Activity -->
+        <activity
+            android:name=".ui.PolicyViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.WalkOver" />
+
+        <!-- Onboarding Activity -->
+        <activity
+            android:name=".ui.OnboardingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.WalkOver" />
+
+        <!-- Terms and Conditions Activity -->
+        <activity
+            android:name=".ui.TermsAndConditionsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.WalkOver" />
+
+        <!-- Permission Education Activity -->
+        <activity
+            android:name=".ui.PermissionEducationActivity"
+            android:exported="false"
+            android:theme="@style/Theme.WalkOver" />
+
         <!-- Walk Tracking Service -->
         <service
             android:name=".service.WalkTrackingService"

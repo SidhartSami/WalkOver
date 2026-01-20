@@ -1,8 +1,6 @@
 package com.sidhart.walkover.ui
 
-import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -30,18 +28,6 @@ import com.sidhart.walkover.data.User
 import com.sidhart.walkover.service.FirebaseService
 import kotlinx.coroutines.launch
 
-// Settings Manager using SharedPreferences
-class SettingsManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("walkover_settings", Context.MODE_PRIVATE)
-
-    var autoSaveEnabled: Boolean
-        get() = prefs.getBoolean("auto_save_enabled", true)
-        set(value) = prefs.edit().putBoolean("auto_save_enabled", value).apply()
-
-    var keepScreenOn: Boolean
-        get() = prefs.getBoolean("keep_screen_on", false)
-        set(value) = prefs.edit().putBoolean("keep_screen_on", value).apply()
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,16 +40,12 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
-    val settingsManager = remember { SettingsManager(context) }
 
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var showEditProfileDialog by remember { mutableStateOf(false) }
+
     var userData by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Settings state
-    var autoSaveEnabled by remember { mutableStateOf(settingsManager.autoSaveEnabled) }
-    var keepScreenOn by remember { mutableStateOf(settingsManager.keepScreenOn) }
 
     // Load user data
     LaunchedEffect(Unit) {
@@ -144,12 +126,7 @@ fun SettingsScreen(
                         )
                     }
 
-                    SettingsItem(
-                        icon = Icons.Outlined.Edit,
-                        title = "Edit Profile",
-                        subtitle = "Update username and preferences",
-                        onClick = { showEditProfileDialog = true }
-                    )
+
 
                     if (userData?.isAnonymous == true) {
                         HorizontalDivider(
@@ -172,48 +149,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Walking Preferences
-            SettingsSectionHeader("Preferences", Icons.Outlined.Tune)
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsSwitchItem(
-                        icon = Icons.Outlined.SaveAlt,
-                        title = "Auto-save Walks",
-                        subtitle = "Automatically save completed walks",
-                        checked = autoSaveEnabled,
-                        onCheckedChange = {
-                            autoSaveEnabled = it
-                            settingsManager.autoSaveEnabled = it
-                        }
-                    )
-
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    )
-
-                    SettingsSwitchItem(
-                        icon = Icons.Outlined.PhoneAndroid,
-                        title = "Keep Screen On",
-                        subtitle = "Prevent screen from turning off during walks",
-                        checked = keepScreenOn,
-                        onCheckedChange = {
-                            keepScreenOn = it
-                            settingsManager.keepScreenOn = it
-                            onKeepScreenOnChange(it)
-                        }
-                    )
-                }
-            }
-
             // About
             SettingsSectionHeader("About", Icons.Outlined.Info)
 
@@ -229,7 +164,7 @@ fun SettingsScreen(
                     SettingsItem(
                         icon = Icons.Outlined.Code,
                         title = "Version",
-                        subtitle = "1.0.0 (Beta)",
+                        subtitle = "2.0",
                         onClick = null
                     )
 
@@ -262,11 +197,11 @@ fun SettingsScreen(
                     SettingsItem(
                         icon = Icons.Outlined.Email,
                         title = "Contact Support",
-                        subtitle = "support@walkover.app",
+                        subtitle = "contact.walkover@gmail.com",
                         onClick = {
                             try {
                                 val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("mailto:support@walkover.app")
+                                    data = Uri.parse("mailto:contact.walkover@gmail.com")
                                     putExtra(Intent.EXTRA_SUBJECT, "WalkOver Support Request")
                                 }
                                 context.startActivity(Intent.createChooser(intent, "Send Email"))
@@ -280,13 +215,15 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.outlineVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
                     )
-
                     SettingsItem(
                         icon = Icons.Outlined.PrivacyTip,
                         title = "Privacy Policy",
                         subtitle = "View our privacy policy",
                         onClick = {
-                            Toast.makeText(context, "Opening privacy policy...", Toast.LENGTH_SHORT).show()
+                            val intent = Intent(context, PolicyViewerActivity::class.java).apply {
+                                putExtra("policy_type", "privacy")
+                            }
+                            context.startActivity(intent)
                         }
                     )
 
@@ -294,13 +231,15 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.outlineVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
                     )
-
                     SettingsItem(
                         icon = Icons.Outlined.Description,
                         title = "Terms of Service",
                         subtitle = "View terms and conditions",
                         onClick = {
-                            Toast.makeText(context, "Opening terms of service...", Toast.LENGTH_SHORT).show()
+                            val intent = Intent(context, PolicyViewerActivity::class.java).apply {
+                                putExtra("policy_type", "terms")
+                            }
+                            context.startActivity(intent)
                         }
                     )
                 }
@@ -375,113 +314,7 @@ fun SettingsScreen(
         }
     }
 
-    // Edit Profile Dialog
-    if (showEditProfileDialog) {
-        var newUsername by remember { mutableStateOf(userData?.username ?: "") }
-        var isUpdating by remember { mutableStateOf(false) }
 
-        AlertDialog(
-            onDismissRequest = { showEditProfileDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "Edit Profile",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "Update your username",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(bottom = 16.dp),
-                        textAlign = TextAlign.Center
-                    )
-                    OutlinedTextField(
-                        value = newUsername,
-                        onValueChange = { newUsername = it },
-                        label = { Text("Username") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                            focusedLabelColor = MaterialTheme.colorScheme.primary,
-                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newUsername.isNotBlank() && newUsername != userData?.username) {
-                            isUpdating = true
-                            scope.launch {
-                                kotlinx.coroutines.delay(1000)
-                                userData = userData?.copy(username = newUsername)
-                                isUpdating = false
-                                showEditProfileDialog = false
-                                Toast.makeText(context, "Profile updated successfully", Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            showEditProfileDialog = false
-                        }
-                    },
-                    enabled = !isUpdating && newUsername.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isUpdating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Update", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showEditProfileDialog = false },
-                    enabled = !isUpdating,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "Cancel",
-                        color = if (isUpdating) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        )
-    }
 
     // Logout Confirmation Dialog
     if (showLogoutDialog) {

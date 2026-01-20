@@ -217,6 +217,35 @@ class FirebaseService {
             Result.failure(Exception("Failed to delete account: ${e.message}"))
         }
     }
+    /**
+     * Update user profile (username only for now)
+     */
+    suspend fun updateUserProfile(username: String): Result<Unit> {
+        return try {
+            val currentUser = auth.currentUser
+            if (currentUser == null) {
+                Result.failure(Exception("User not authenticated"))
+            } else {
+                // Update display name in Firebase Auth
+                val profileUpdates = UserProfileChangeRequest.Builder()
+                    .setDisplayName(username)
+                    .build()
+                currentUser.updateProfile(profileUpdates).await()
+
+                // Update username in Firestore
+                firestore.collection(USERS_COLLECTION)
+                    .document(currentUser.uid)
+                    .update("username", username)
+                    .await()
+
+                android.util.Log.d("FirebaseService", "Profile updated successfully")
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FirebaseService", "Error updating profile", e)
+            Result.failure(Exception("Failed to update profile: ${e.message}"))
+        }
+    }
     // Add this method to FirebaseService class
     /**
      * Sign in with Google credential

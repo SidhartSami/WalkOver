@@ -82,7 +82,6 @@ fun LoginScreen(
                     firebaseService.signInWithGoogle(account).fold(
                         onSuccess = {
                             isLoading = false
-                            Toast.makeText(context, "Welcome, ${it.username}!", Toast.LENGTH_SHORT).show()
                             onLoginSuccess()
                         },
                         onFailure = { error ->
@@ -113,7 +112,6 @@ fun LoginScreen(
             firebaseService.signInWithEmailOrUsername(emailOrUsername, password).fold(
                 onSuccess = {
                     isLoading = false
-                    Toast.makeText(context, "Welcome back!", Toast.LENGTH_SHORT).show()
                     onLoginSuccess()
                 },
                 onFailure = { error ->
