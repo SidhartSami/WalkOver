@@ -29,9 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
@@ -59,6 +57,7 @@ import android.content.ComponentName
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
+import com.sidhart.walkover.utils.AppPreferencesManager
 
 // Top-level helper functions
 @Composable
@@ -137,18 +136,53 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WalkOverTheme {
-                AuthNavigationWrapper(
-                    locationService = locationService,
-                    firebaseService = firebaseService,
-                    context = this@MainActivity,
-                    onRequestPermission = { callback ->
-                        permissionCallback = callback
-                        requestLocationPermission()
-                    },
-                    onRequestLocationSettings = {
-                        promptEnableLocation()
+                val appPreferencesManager = remember {
+                    AppPreferencesManager(this@MainActivity)
+                }
+
+                var hasAcceptedPrivacyPolicy by remember {
+                    mutableStateOf(appPreferencesManager.hasAcceptedPrivacyPolicy())
+                }
+
+                var hasCompletedOnboarding by remember {
+                    mutableStateOf(appPreferencesManager.hasCompletedOnboarding())
+                }
+
+                when {
+                    // Show Privacy Policy first (only on first launch)
+                    !hasAcceptedPrivacyPolicy -> {
+                        PrivacyPolicyScreen(
+                            onAcceptPrivacyPolicy = {
+                                appPreferencesManager.setPrivacyPolicyAccepted(true)
+                                hasAcceptedPrivacyPolicy = true
+                            }
+                        )
                     }
-                )
+                    // Show Onboarding second (only after privacy policy, first time)
+                    !hasCompletedOnboarding -> {
+                        OnboardingScreen(
+                            onOnboardingComplete = {
+                                appPreferencesManager.setOnboardingCompleted(true)
+                                hasCompletedOnboarding = true
+                            }
+                        )
+                    }
+                    // Show main auth flow (login/register)
+                    else -> {
+                        AuthNavigationWrapper(
+                            locationService = locationService,
+                            firebaseService = firebaseService,
+                            context = this@MainActivity,
+                            onRequestPermission = { callback ->
+                                permissionCallback = callback
+                                requestLocationPermission()
+                            },
+                            onRequestLocationSettings = {
+                                promptEnableLocation()
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -258,11 +292,7 @@ fun AuthNavigationWrapper(
                         }
                     }
                 },
-                onNavigateToVerification = { email ->
-                    navController.navigate("verification/$email") {
-                        launchSingleTop = true
-                    }
-                }
+                onNavigateToVerification = { } // Not used anymore
             )
         }
 
@@ -270,37 +300,14 @@ fun AuthNavigationWrapper(
             RegisterScreen(
                 firebaseService = firebaseService,
                 onRegisterSuccess = { userEmail ->
-                    navController.navigate("verification/$userEmail") {
+                    // Just navigate back to login after showing success dialog
+                    navController.navigate("login") {
                         popUpTo("register") { inclusive = true }
                         launchSingleTop = true
                     }
                 },
                 onNavigateToLogin = {
                     navController.popBackStack()
-                }
-            )
-        }
-
-        composable("verification/{email}") { backStackEntry ->
-            val email = backStackEntry.arguments?.getString("email") ?: ""
-            EmailVerificationScreen(
-                firebaseService = firebaseService,
-                userEmail = email,
-                onVerificationComplete = {
-                    isAuthenticated.value = true
-                    kotlinx.coroutines.MainScope().launch {
-                        kotlinx.coroutines.delay(300)
-                        navController.navigate("main") {
-                            popUpTo(0) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
-                },
-                onBackToLogin = {
-                    navController.navigate("login") {
-                        popUpTo(0) { inclusive = true }
-                        launchSingleTop = true
-                    }
                 }
             )
         }
@@ -324,7 +331,6 @@ fun AuthNavigationWrapper(
         }
     }
 }
-
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Map : Screen("map", "Map", Icons.Default.LocationOn)
     object Profile : Screen("profile", "Profile", Icons.Default.Person)
@@ -343,11 +349,11 @@ fun MainNavigationScreen(
 ) {
     val navController = rememberNavController()
     val isDarkTheme = isSystemInDarkTheme()
-    
+
     // Persistent walk state - service is source of truth
     val activity = context as? MainActivity
     var walkState by remember { mutableStateOf(LiveWalkState()) }
-    
+
     // Always read from service as source of truth
     LaunchedEffect(activity?.isServiceBound, activity?.walkTrackingService) {
         val mainActivity = activity
@@ -361,7 +367,7 @@ fun MainNavigationScreen(
             }
         }
     }
-    
+
     // Poll service state periodically to catch updates
     LaunchedEffect(Unit) {
         while (true) {
@@ -479,7 +485,7 @@ fun MainNavigationScreen(
                     }
                 )
             }
-            
+
             composable("view_walk_map/{walkId}") { backStackEntry ->
                 val walkId = backStackEntry.arguments?.getString("walkId") ?: ""
                 ViewWalkMapScreen(
@@ -531,19 +537,19 @@ fun EnhancedMapScreenContent(
     var walkState by remember { mutableStateOf(persistentWalkState) }
     var showFullScreenStats by remember { mutableStateOf(false) }
     var currentMapStyleState by remember { mutableStateOf(currentMapStyle) }
-    
+
     // Always sync with persistent state from parent
     LaunchedEffect(persistentWalkState) {
         if (persistentWalkState != walkState) {
             walkState = persistentWalkState
         }
     }
-    
+
     // Update parent immediately when state changes (for persistence)
     LaunchedEffect(walkState.isTracking, walkState.points.size, walkState.stats.elapsedTimeMillis) {
         onWalkStateChange(walkState)
     }
-    
+
     // Start notification service when tracking starts
     val activity = context as? MainActivity
     LaunchedEffect(walkState.isTracking) {
@@ -559,7 +565,7 @@ fun EnhancedMapScreenContent(
             }
         }
     }
-    
+
     // Sync local state to service for notifications
     LaunchedEffect(walkState.isTracking, walkState.stats.elapsedTimeMillis, walkState.points.size) {
         if (walkState.isTracking) {
@@ -608,13 +614,13 @@ fun EnhancedMapScreenContent(
 
                         val newState = walkState.copy(points = updatedPoints)
                             .updateStats(distance, 0.0, updatedPoints.size)
-                        
+
                         // Update service first (source of truth)
                         activity?.walkTrackingService?.syncState(newState)
-                        
+
                         // Then update local state (will be synced from service)
                         walkState = newState
-                        
+
                         // Update parent state for persistence
                         onWalkStateChange(newState)
 
@@ -984,14 +990,14 @@ fun EnhancedMapScreenContent(
                                 startTime = System.currentTimeMillis(),
                                 points = emptyList()
                             )
-                            
+
                             // Update service first
                             activity?.walkTrackingService?.syncState(newState)
-                            
+
                             // Then update local and parent
                             walkState = newState
                             onWalkStateChange(newState)
-                            
+
                             mapView?.let { map ->
                                 currentLocationMarker?.let { map.overlays.remove(it) }
                                 walkPolyline?.let { map.overlays.remove(it) }
@@ -1092,13 +1098,13 @@ fun EnhancedMapScreenContent(
                             // Stop tracking
                             val finalState = walkState
                             val stoppedState = walkState.copy(isTracking = false, isPaused = false)
-                            
+
                             // Stop service first
                             val stopIntent = Intent(context, WalkTrackingService::class.java).apply {
                                 action = WalkTrackingService.ACTION_STOP_TRACKING
                             }
                             context.startService(stopIntent)
-                            
+
                             // Then update local state
                             walkState = stoppedState
                             onWalkStateChange(stoppedState)

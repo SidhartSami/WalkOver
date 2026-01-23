@@ -57,10 +57,9 @@ fun LoginScreen(
     var showVerificationDialog by remember { mutableStateOf(false) }
     var pendingVerificationEmail by remember { mutableStateOf("") }
 
-    // Configure Google Sign-In
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(context.getString(com.sidhart.walkover.R.string.default_web_client_id))
+            .requestIdToken(context.getString(R.string.default_web_client_id))
             .requestEmail()
             .build()
     }
@@ -69,7 +68,6 @@ fun LoginScreen(
         GoogleSignIn.getClient(context, gso)
     }
 
-    // Google Sign-In launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -79,46 +77,71 @@ fun LoginScreen(
                 val account = task.getResult(ApiException::class.java)
                 scope.launch {
                     isLoading = true
+                    errorMessage = null
+                    
                     firebaseService.signInWithGoogle(account).fold(
-                        onSuccess = {
+                        onSuccess = { user ->
                             isLoading = false
-                            Toast.makeText(context, "Welcome, ${it.username}!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "Welcome, ${user.username}!",
+                                Toast.LENGTH_SHORT
+                            ).show()
                             onLoginSuccess()
                         },
                         onFailure = { error ->
                             isLoading = false
                             errorMessage = error.message
-                            Toast.makeText(context, "Google sign-in failed: ${error.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(
+                                context,
+                                "Google sign-in failed: ${error.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     )
                 }
             } catch (e: ApiException) {
                 isLoading = false
                 errorMessage = "Google sign-in failed"
-                Toast.makeText(context, "Google sign-in failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    "Google sign-in failed: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         } else {
             isLoading = false
+            errorMessage = null
         }
     }
 
     fun performLogin() {
-        if (emailOrUsername.isBlank() || password.isBlank()) {
+        val trimmedEmail = emailOrUsername.trim()
+        val trimmedPassword = password.trim()
+        
+        if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
             errorMessage = "Please enter your credentials"
             return
         }
 
         scope.launch {
             isLoading = true
-            firebaseService.signInWithEmailOrUsername(emailOrUsername, password).fold(
-                onSuccess = {
+            errorMessage = null
+            
+            firebaseService.signInWithEmailOrUsername(trimmedEmail, trimmedPassword).fold(
+                onSuccess = { user ->
                     isLoading = false
-                    Toast.makeText(context, "Welcome back!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        "Welcome back, ${user.username}!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                     onLoginSuccess()
                 },
                 onFailure = { error ->
                     isLoading = false
-                    val errorMsg = error.message ?: ""
+                    val errorMsg = error.message ?: "Sign-in failed"
+                    
                     if (errorMsg.startsWith("EMAIL_NOT_VERIFIED|")) {
                         pendingVerificationEmail = errorMsg.substringAfter("EMAIL_NOT_VERIFIED|")
                         showVerificationDialog = true
@@ -142,7 +165,6 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // App Logo Icon
             Icon(
                 imageVector = Icons.Outlined.DirectionsWalk,
                 contentDescription = "WalkOver",
@@ -152,7 +174,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // App Title
             Text(
                 text = "WalkOver",
                 fontSize = 48.sp,
@@ -172,7 +193,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Error Message
             if (errorMessage != null) {
                 Card(
                     modifier = Modifier
@@ -202,7 +222,6 @@ fun LoginScreen(
                 }
             }
 
-            // Email or Username Field
             OutlinedTextField(
                 value = emailOrUsername,
                 onValueChange = {
@@ -238,7 +257,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Password Field
             OutlinedTextField(
                 value = password,
                 onValueChange = {
@@ -287,7 +305,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Login Button
             Button(
                 onClick = { performLogin() },
                 modifier = Modifier
@@ -323,7 +340,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Divider with "OR"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -347,7 +363,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Google Sign-In Button
             OutlinedButton(
                 onClick = {
                     isLoading = true
@@ -366,12 +381,11 @@ fun LoginScreen(
                 shape = RoundedCornerShape(16.dp),
                 enabled = !isLoading
             ) {
-                // Google logo icon (you can use a custom drawable or the Mail icon as placeholder)
                 Icon(
                     painter = painterResource(id = R.drawable.ic_google_logo),
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
-                    tint = Color.Unspecified // For colored logos
+                    tint = Color.Unspecified
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -383,7 +397,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Register Link
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -406,36 +419,117 @@ fun LoginScreen(
             }
         }
 
-        // Verification Dialog
+        // Email Not Verified Dialog
         if (showVerificationDialog) {
             AlertDialog(
                 onDismissRequest = { showVerificationDialog = false },
                 title = {
-                    Text(
-                        "Email Not Verified",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.MarkEmailUnread,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "Email Not Verified",
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 },
                 text = {
-                    Text("Please verify your email address before signing in. We've sent a verification link to $pendingVerificationEmail")
+                    Column {
+                        Text(
+                            "Your account exists but your email hasn't been verified yet.",
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp)
+                            ) {
+                                Text(
+                                    "To login:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    "1. Check your email inbox ($pendingVerificationEmail)\n2. Click the verification link\n3. Return here and try logging in again",
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Check spam folder if you don't see the email",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 },
                 confirmButton = {
                     Button(
                         onClick = {
                             showVerificationDialog = false
-                            onNavigateToVerification(pendingVerificationEmail)
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
-                        Text("Verify Now")
+                        Text("Got it")
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showVerificationDialog = false }) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(
+                        onClick = {
+                            showVerificationDialog = false
+                            // Resend verification email
+                            scope.launch {
+                                firebaseService.resendVerificationEmailForUnverifiedUser(pendingVerificationEmail).fold(
+                                    onSuccess = {
+                                        Toast.makeText(
+                                            context,
+                                            "Verification email resent!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    },
+                                    onFailure = {
+                                        Toast.makeText(
+                                            context,
+                                            "Failed to resend email",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    ) {
+                        Text("Resend Email")
                     }
                 }
             )

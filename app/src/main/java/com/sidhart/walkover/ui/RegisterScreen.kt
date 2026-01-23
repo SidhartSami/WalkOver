@@ -46,6 +46,8 @@ fun RegisterScreen(
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showSuccessDialog by remember { mutableStateOf(false) }
+    var registeredEmail by remember { mutableStateOf("") }
 
     Box(
         modifier = Modifier
@@ -59,7 +61,6 @@ fun RegisterScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // App Logo Icon
             Icon(
                 imageVector = Icons.Outlined.DirectionsWalk,
                 contentDescription = "WalkOver",
@@ -69,7 +70,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // App Title
             Text(
                 text = "Join WalkOver",
                 fontSize = 42.sp,
@@ -89,7 +89,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(40.dp))
 
-            // Error Message
             if (errorMessage != null) {
                 Card(
                     modifier = Modifier
@@ -119,7 +118,6 @@ fun RegisterScreen(
                 }
             }
 
-            // Username Field
             OutlinedTextField(
                 value = username,
                 onValueChange = {
@@ -155,7 +153,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Email Field
             OutlinedTextField(
                 value = email,
                 onValueChange = {
@@ -191,7 +188,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Password Field
             OutlinedTextField(
                 value = password,
                 onValueChange = {
@@ -237,7 +233,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Confirm Password Field
             OutlinedTextField(
                 value = confirmPassword,
                 onValueChange = {
@@ -285,7 +280,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Password Requirements
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -306,10 +300,8 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Register Button
             Button(
                 onClick = {
-                    // Validation
                     if (username.isBlank() || email.isBlank() || password.isBlank()) {
                         errorMessage = "Please fill all fields"
                         return@Button
@@ -342,26 +334,12 @@ fun RegisterScreen(
                         firebaseService.registerWithEmailEnhanced(email.trim(), password, username.trim()).fold(
                             onSuccess = { user ->
                                 isLoading = false
-                                Toast.makeText(
-                                    context,
-                                    "Account created! Please verify your email.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-
-                                kotlinx.coroutines.delay(200)
-                                onRegisterSuccess(user.email)
+                                registeredEmail = user.email
+                                showSuccessDialog = true
                             },
                             onFailure = { error ->
                                 isLoading = false
                                 errorMessage = error.message ?: "Registration failed"
-
-                                if (error.message?.contains("already registered") == true) {
-                                    Toast.makeText(
-                                        context,
-                                        "This email is already in use. Please use a different email or try logging in.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
                             }
                         )
                     }
@@ -399,7 +377,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Login Link
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -420,8 +397,108 @@ fun RegisterScreen(
                     }
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(24.dp))
+        // Success Dialog
+        if (showSuccessDialog) {
+            AlertDialog(
+                onDismissRequest = { },
+                title = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.MarkEmailRead,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "Account Created!",
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            "We've sent a verification email to:",
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            registeredEmail,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp)
+                            ) {
+                                Text(
+                                    "Next Steps:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "1. Check your email inbox\n2. Click the verification link\n3. Return here and login",
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Check spam folder if you don't see it",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showSuccessDialog = false
+                            Toast.makeText(
+                                context,
+                                "Please verify your email before logging in",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            onNavigateToLogin()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Got it!")
+                    }
+                }
+            )
         }
     }
 }

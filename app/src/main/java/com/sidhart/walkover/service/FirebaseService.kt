@@ -21,7 +21,28 @@ class FirebaseService {
     }
 
     // ============= AUTHENTICATION METHODS =============
-
+    suspend fun resendVerificationEmailForUnverifiedUser(email: String): Result<Unit> {
+        return try {
+            val currentUser = auth.currentUser
+            
+            if (currentUser != null && currentUser.email == email) {
+                // Already signed in with this email
+                if (!currentUser.isEmailVerified) {
+                    currentUser.sendEmailVerification().await()
+                    android.util.Log.d("FirebaseService", "Verification email resent to: $email")
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception("Email already verified"))
+                }
+            } else {
+                // Not signed in - cannot resend without password
+                Result.failure(Exception("Please provide your password to resend verification email"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FirebaseService", "Failed to resend verification email", e)
+            Result.failure(Exception("Failed to resend verification email: ${e.message}"))
+        }
+    }
     /**
      * Sign in with email and password
      */
@@ -175,49 +196,6 @@ class FirebaseService {
         }
     }
 
-    /**
-     * Delete unverified account (can only be called if you know the email and password)
-     * This is useful if someone accidentally registers with wrong email
-     */
-    suspend fun deleteUnverifiedAccount(email: String, password: String): Result<Unit> {
-        return try {
-            android.util.Log.d("FirebaseService", "Attempting to delete unverified account: $email")
-
-            // Sign in first to get access
-            val result = auth.signInWithEmailAndPassword(email, password).await()
-            val user = result.user
-
-            if (user != null) {
-                if (!user.isEmailVerified) {
-                    // Delete Firestore data
-                    try {
-                        firestore.collection(USERS_COLLECTION)
-                            .document(user.uid)
-                            .delete()
-                            .await()
-                    } catch (e: Exception) {
-                        android.util.Log.e("FirebaseService", "Error deleting Firestore data", e)
-                    }
-
-                    // Delete auth account
-                    user.delete().await()
-
-                    android.util.Log.d("FirebaseService", "✅ Unverified account deleted successfully")
-                    Result.success(Unit)
-                } else {
-                    // Account is verified - don't delete
-                    auth.signOut()
-                    Result.failure(Exception("Cannot delete: Email is already verified"))
-                }
-            } else {
-                Result.failure(Exception("Failed to access account"))
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("FirebaseService", "Error deleting unverified account", e)
-            Result.failure(Exception("Failed to delete account: ${e.message}"))
-        }
-    }
-    // Add this method to FirebaseService class
     /**
      * Sign in with Google credential
      */
@@ -550,36 +528,6 @@ class FirebaseService {
         } catch (e: Exception) {
             android.util.Log.e("FirebaseService", "Error updating user profile", e)
             Result.failure(e)
-        }
-    }
-
-    /**
-     * Update username
-     */
-    suspend fun updateUsername(newUsername: String): Result<Unit> {
-        return try {
-            val currentUser = auth.currentUser
-            if (currentUser == null) {
-                Result.failure(Exception("User not authenticated"))
-            } else {
-                // Update display name in auth
-                val profileUpdates = UserProfileChangeRequest.Builder()
-                    .setDisplayName(newUsername)
-                    .build()
-                currentUser.updateProfile(profileUpdates).await()
-
-                // Update username in Firestore
-                firestore.collection(USERS_COLLECTION)
-                    .document(currentUser.uid)
-                    .update("username", newUsername)
-                    .await()
-
-                android.util.Log.d("FirebaseService", "Username updated to: $newUsername")
-                Result.success(Unit)
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("FirebaseService", "Error updating username", e)
-            Result.failure(Exception("Failed to update username: ${e.message}"))
         }
     }
 
