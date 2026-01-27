@@ -1,132 +1,173 @@
-# WalkOver - Fitness Gamified App
+<a id="readme-top"></a>
 
-A Kotlin Android app that gamifies fitness by tracking walking paths on a map and creating a leaderboard system.
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![License][license-shield]][license-url]
+[![LinkedIn][linkedin-shield]][linkedin-url]
 
-## Features
+<br />
+<div align="center">
+  <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" width="200" alt="Get it on Google Play" />
+  <h3 align="center">WalkOver</h3>
 
-- **Map Integration**: Interactive map functionality (to be added later)
-- **GPS Tracking**: Real-time location tracking with high accuracy
-- **Path Tracking**: GPS-based route tracking
-- **Territory Calculation**: Area calculation for covered regions
-- **Firebase Integration**: Cloud storage for walks and user data
-- **Leaderboard**: Top 10 users by area captured or distance walked
-- **Anonymous Authentication**: No registration required
+  <p align="center">
+    A modern, social fitness application reimaging the walking experience.
+    <br />
+    <strong>Social Fitness Tracking • Real-time Maps • Gamified Challenges</strong>
+    <br />
+    <br />
+    <a href="https://github.com/SidhartSami/WalkOver/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    ·
+    <a href="https://github.com/SidhartSami/WalkOver/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+  </p>
+</div>
 
-## Project Structure
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+        <li><a href="#key-features">Key Features</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+      </ul>
+    </li>
+    <li><a href="#availability">Availability</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
 
-```
-app/src/main/java/com/sidhart/walkover/
-├── data/
-│   ├── LocationPoint.kt      # GPS coordinate data class
-│   ├── User.kt              # User statistics model
-│   └── Walk.kt              # Walk session model
-├── service/
-│   ├── FirebaseService.kt   # Firebase operations
-│   └── LocationService.kt   # GPS tracking service
-├── ui/
-│   └── LeaderboardActivity.kt
-└── MainActivity.kt          # Main map screen (Compose-based)
-```
+## About The Project
 
-## Setup Instructions
+WalkOver is a comprehensive social fitness application designed to make walking fun, engaging, and competitive. Unlike standard step counters, WalkOver integrates real-time social features, interactive mapping, and gamification to motivate users to stay active.
 
-### 1. Firebase Configuration
+The application allows users to track their daily activity, compete with friends on leaderboards, participate in daily generated challenges, and visualize their journeys on an interactive map.
 
-✅ **Already configured!** Your `google-services.json` is already in place with:
-- Project ID: `walkover-4707b`
-- Package: `com.sidhart.walkover`
-- API Key: Configured
+### Key Features
 
-**Next steps:**
-1. Go to [Firebase Console](https://console.firebase.google.com/project/walkover-4707b)
-2. Enable **Authentication** → **Sign-in method** → **Anonymous**
-3. Enable **Firestore Database** → Create database in test mode
+**Core Tracking:**
+- **Precise Step Counting**: Accurate daily step and distance tracking using device sensors.
+- **Live Walk Mode**: Real-time GPS tracking of walking sessions with detailed stats (speed, distance, duration).
+- **History & Analysis**: Comprehensive weekly and monthly statistics with visual graphs.
 
-### 2. Map Integration
+**Social & Gamification:**
+- **Leaderboards**: Global and friends-only leaderboards to foster healthy competition.
+- **Daily Challenges**: System-generated daily goals (e.g., "Walk 5km", "Walk for 30 mins") that award XP.
+- **XP & Leveling System**: Earn experience points for activities to level up your profile.
+- **Streak System**: Logic that rewards consistency with streak bonuses and milestones.
 
-⚠️ **Map functionality temporarily removed** - Will be re-added later with your preferred mapping solution.
+**Technical Highlights:**
+- **Modern UI/UX**: Built entirely with **Jetpack Compose** following Material Design 3 guidelines.
+- **Cloud Sync**: Full data synchronization using **Firebase Firestore**.
+- **Interactive Maps**: Integration with **OSMDroid** for rich map interfaces and route visualization.
+- **Background Services**: Robust foreground services for reliable tracking even when the app is closed.
 
-### 3. Build and Run
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-1. Open the project in Android Studio
-2. Sync Gradle files
-3. Build and run on a **physical device** (GPS required)
-4. Grant location permissions when prompted
+### Built With
 
-## Key Components
+* [![Kotlin][Kotlin-badge]][Kotlin-url]
+* [![Android][Android-badge]][Android-url]
+* [![Firebase][Firebase-badge]][Firebase-url]
+* [![Jetpack Compose][Compose-badge]][Compose-url]
 
-### LocationService
-- Uses FusedLocationProviderClient for high-accuracy GPS
-- Calculates distance and area using spherical geometry
-- Provides reactive location updates via Kotlin Flow
+**Key Technologies:**
+- **Kotlin** - Primary development language.
+- **Jetpack Compose** - Modern toolkit for building native UI.
+- **Firebase Auth & Firestore** - Authentication and real-time database.
+- **OSMDroid** - Open source alternative to Google Maps for rendering map views.
+- **Coroutines & Flow** - Asynchronous programming and reactive data streams.
 
-### MainActivity (Compose)
-- Jetpack Compose-based UI with Material 3 design
-- Real-time state management with Compose
-- Reactive location tracking and stats display
-- Map integration to be added later
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### FirebaseService
-- Saves walk data to Firestore
-- Maintains user statistics
-- Provides leaderboard queries
+## Getting Started
 
-## Permissions Required
+### Prerequisites
 
-- `ACCESS_FINE_LOCATION`: High-accuracy GPS tracking
-- `ACCESS_COARSE_LOCATION`: Fallback location access
-- `INTERNET`: Firebase and map data
+Ensure you have the following installed on your development environment:
 
-## Performance Features
+* **Android Studio** - Iguana or newer recommended.
+* **JDK 17** - Required for building the project.
+* **Android Device/Emulator** - Running Android 8.0 (API Level 26) or higher.
 
-- Location updates limited to 1-second intervals
-- Battery-optimized location requests
-- Efficient polyline rendering
-- Minimal Firebase writes
-- Proper lifecycle management
+### Installation
 
-## Usage
+1. Clone the repository
+   ```sh
+   git clone https://github.com/SidhartSami/WalkOver.git
+   ```
 
-1. **Start Walk**: Tap "Start Walk" to begin tracking
-2. **Real-time Tracking**: Watch your path draw on the map
-3. **Stats Display**: See distance and area covered
-4. **Stop Walk**: Tap "Stop Walk" to save your walk
-5. **Leaderboard**: View top users by area or distance
+2. Open the project in Android Studio.
 
-## Dependencies
+3. Sync Gradle files to download dependencies.
 
-- **Jetpack Compose**: Latest BOM with Material 3
-- **Firebase**: 32.7.0 (BOM)
-- **Google Play Services Location**: 21.0.1
-- **Kotlin Coroutines**: 1.7.3
-- **AndroidX**: Latest stable versions
+4. Configuration:
+   - This project uses Firebase. You must place your own `google-services.json` file in the `app/` directory.
+   - Configure local properties if necessary for API keys.
 
-## Future Enhancements
+5. Build and Run:
+   - Select your target device and click "Run" (Shift+F10).
 
-- Map integration and visualization
-- Social features and friend challenges
-- Achievement badges and rewards
-- Route sharing and discovery
-- Offline map caching
-- Advanced analytics and insights
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Troubleshooting
+## Availability
 
-**Map not loading?**
-- Map functionality has been temporarily removed
-- Will be re-added in a future update
+**WalkOver is available on the Google Play Store!**
 
-**Location not working?**
-- Ensure location permissions are granted
-- Test on physical device (not emulator)
-- Check GPS is enabled
+Download it today to start your fitness journey.
 
-**Firebase errors?**
-- Verify Firebase project is properly configured
-- Check Authentication and Firestore are enabled
-- Ensure `google-services.json` is in `app/` directory
+<a href='https://play.google.com/store/apps/details?id=com.sidhart.walkover'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png' width='200'/></a>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## License
 
-This project is for educational and development purposes.
+Distributed under the MIT License. See `LICENSE` for more information.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Contact
+
+**Sidhart Sami** - [LinkedIn](https://www.linkedin.com/in/sidhart-sami/) - sidhartsami@gmail.com
+
+Project Link: [https://github.com/SidhartSami/WalkOver](https://github.com/SidhartSami/WalkOver)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Acknowledgments
+
+- [Android Developers](https://developer.android.com/)
+- [Firebase Documentation](https://firebase.google.com/docs)
+- [OSMDroid Library](https://github.com/osmdroid/osmdroid)
+- [Jetpack Compose Guidelines](https://developer.android.com/jetpack/compose)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+[forks-shield]: https://img.shields.io/github/forks/SidhartSami/WalkOver.svg?style=for-the-badge
+[forks-url]: https://github.com/SidhartSami/WalkOver/network/members
+[stars-shield]: https://img.shields.io/github/stars/SidhartSami/WalkOver.svg?style=for-the-badge
+[stars-url]: https://github.com/SidhartSami/WalkOver/stargazers
+[issues-shield]: https://img.shields.io/github/issues/SidhartSami/WalkOver.svg?style=for-the-badge
+[issues-url]: https://github.com/SidhartSami/WalkOver/issues
+[license-shield]: https://img.shields.io/github/license/SidhartSami/WalkOver.svg?style=for-the-badge
+[license-url]: https://github.com/SidhartSami/WalkOver/blob/main/LICENSE
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+[linkedin-url]: https://www.linkedin.com/in/sidhart-sami/
+[Kotlin-badge]: https://img.shields.io/badge/Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white
+[Kotlin-url]: https://kotlinlang.org/
+[Android-badge]: https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white
+[Android-url]: https://developer.android.com/
+[Firebase-badge]: https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black
+[Firebase-url]: https://firebase.google.com/
+[Compose-badge]: https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=for-the-badge&logo=android&logoColor=white
+[Compose-url]: https://developer.android.com/jetpack/compose
