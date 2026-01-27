@@ -8,7 +8,9 @@
 
 <br />
 <div align="center">
-  <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" width="200" alt="Get it on Google Play" />
+<a href="https://play.google.com/store/apps/details?id=com.sidhart.walkover&hl=en">
+    <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" width="200" alt="Get it on Google Play" />
+  </a>
   <h3 align="center">WalkOver</h3>
 
   <p align="center">
