@@ -913,6 +913,11 @@ fun MainNavigationScreen(
                             mapView = this
                         }
                     },
+                    update = { map ->
+                        if (map.tileProvider.tileSource != currentMapStyle.tileSource) {
+                            map.setTileSource(currentMapStyle.tileSource)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
 
