@@ -1,8 +1,5 @@
 package com.sidhart.walkover.ui
 
-import android.widget.Toast
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,18 +8,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sidhart.walkover.data.User
@@ -30,37 +24,38 @@ import com.sidhart.walkover.data.Walk
 import com.sidhart.walkover.service.FirebaseService
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
-import java.text.SimpleDateFormat
-import androidx.compose.ui.graphics.graphicsLayer
 import java.util.*
-
-enum class ProfileTab(val displayName: String, val icon: ImageVector) {
-    OVERVIEW("Overview", Icons.Outlined.GridView),
-    STATS("Statistics", Icons.Outlined.Insights)
-}
-
+import com.sidhart.walkover.data.UserChallenge
+import com.sidhart.walkover.data.StreakData
+import com.sidhart.walkover.ui.components.CommonHeader
+import com.sidhart.walkover.ui.theme.NeonGreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
     firebaseService: FirebaseService,
-    onNavigateToWalkHistory: () -> Unit
+    onNavigateToWalkHistory: () -> Unit,
+    onNavigateToDetailedStats: () -> Unit = {},
+    onNavigateToSettings: () -> Unit,
+    onNavigateToFriendsList: () -> Unit,
+    onNavigateBack: () -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
     var userData by remember { mutableStateOf<User?>(null) }
-    var recentWalks by remember { mutableStateOf<List<Walk>>(emptyList()) }
     var allWalks by remember { mutableStateOf<List<Walk>>(emptyList()) }
     var isLoadingUser by remember { mutableStateOf(true) }
-    var isLoadingWalks by remember { mutableStateOf(true) }
-    var weeklyStats by remember { mutableStateOf<WeeklyStats?>(null) }
-    var selectedTab by remember { mutableStateOf(ProfileTab.OVERVIEW) }
-
+    // var isLoadingWalks by remember { mutableStateOf(true) } // no longer used for button
+    var dailyChallenges by remember { mutableStateOf<List<UserChallenge>>(emptyList()) }
+    var streakData by remember { mutableStateOf<StreakData?>(null) }
+    var isLoadingStreak by remember { mutableStateOf(true) }
+    var todayWalks by remember { mutableStateOf<List<Walk>>(emptyList()) }
+    var followersCount by remember { mutableStateOf<Int?>(null) }
     val decimalFormat = remember { DecimalFormat("#,##0.##") }
 
-    // Load user data and walks
+
+    // Load all data
     LaunchedEffect(Unit) {
         scope.launch {
             // Load user data
@@ -71,97 +66,177 @@ fun ProfileScreen(
                 },
                 onFailure = { error ->
                     isLoadingUser = false
-                    Toast.makeText(context, "Failed to load profile: ${error.message}", Toast.LENGTH_SHORT).show()
+                    // Error handling suppressed
                 }
             )
 
-            // Load all walks
+            // Load streak data
+            firebaseService.getCurrentUserStreak().fold(
+                onSuccess = { streak ->
+                    streakData = streak
+                    isLoadingStreak = false
+                },
+                onFailure = {
+                    isLoadingStreak = false
+                }
+            )
+
+            // Load daily challenges
+            firebaseService.getDailyChallenges().fold(
+                onSuccess = { challenges ->
+                    dailyChallenges = challenges
+                },
+                onFailure = { error ->
+                    // Error handling suppressed
+                }
+            )
+
+            // Load followers count
+            firebaseService.getFollowers().fold(
+                onSuccess = { followers ->
+                    followersCount = followers.size
+                },
+                onFailure = {
+                    followersCount = 0
+                }
+            )
+
+            // Load walks
             firebaseService.getWalks().fold(
                 onSuccess = { walks ->
                     allWalks = walks
-                    recentWalks = walks.take(5)
-                    weeklyStats = calculateWeeklyStats(walks)
-                    isLoadingWalks = false
+                    
+                    // Filter today's walks for streak card
+                    val todayStart = Calendar.getInstance().apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.time
+                    todayWalks = walks.filter { it.timestamp >= todayStart }
                 },
                 onFailure = { error ->
-                    isLoadingWalks = false
-                    Toast.makeText(context, "Failed to load walks: ${error.message}", Toast.LENGTH_SHORT).show()
+                    // Error handling suppressed
                 }
             )
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        // Profile Header
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 20.dp, bottom = 20.dp)
-        ) {
-            // Title
-            Text(
-                text = "Profile",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // User Profile Card with Stats
-            if (isLoadingUser) {
-                UserProfileCardSkeleton()  // Use proper skeleton
-            } else if (userData != null) {
-                UserProfileCardWithStats(
-                    userData = userData!!,
-                    allWalks = allWalks,
-                    decimalFormat = decimalFormat
-                )
-            }
-        }
-
-        // Tab Navigation
-        TabNavigation(
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 16.dp)
-        )
-
-        // Tab Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            when (selectedTab) {
-                ProfileTab.OVERVIEW -> {
-                    OverviewTabContent(
-                        userData = userData,
-                        recentWalks = recentWalks,
-                        isLoading = isLoadingWalks,
-                        onNavigateToWalkHistory = onNavigateToWalkHistory,
-                        decimalFormat = decimalFormat
-                    )
-                }
-                ProfileTab.STATS -> {
-                    StatsTabContent(
-                        weeklyStats = weeklyStats,
-                        allWalks = allWalks,
-                        isLoading = isLoadingWalks,
-                        decimalFormat = decimalFormat
+            // Header (profile header should simply read "Profile" without logo)
+            CommonHeader(
+                title = "Profile",
+                onSettingsClick = onNavigateToSettings,
+                showLogo = false,
+                onAddFriendClick = onNavigateToFriendsList,
+                onNavigateBack = onNavigateBack
+            )
+
+            // User Profile Card
+            if (isLoadingUser) {
+                UserProfileCardSkeleton()
+            } else if (userData != null) {
+                UserProfileCardWithStats(
+                    userData = userData!!,
+                    allWalks = allWalks,
+                    followersCount = followersCount,
+                    decimalFormat = decimalFormat,
+                    onNavigateToFriendsList = onNavigateToFriendsList
+                )
+            }
+
+            // Streak Card (NEW - prominent placement)
+            if (isLoadingStreak) {
+                StreakCardSkeleton()
+            } else if (streakData != null) {
+                StreakCard(
+                    streakData = streakData!!,
+                    todayWalks = todayWalks,
+                    dailyChallenges = dailyChallenges
+                )
+            }
+
+            // Daily Challenges
+
+
+            // View Detailed Stats Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(enabled = true, onClick = onNavigateToDetailedStats),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Insights,
+                                contentDescription = null,
+                                // neon tint for detailed stats icon
+                                tint = NeonGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = "Detailed Statistics",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "See your detailed stats",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
+
+            RecentWalkButton(onClick = onNavigateToWalkHistory)
         }
     }
 }
@@ -170,12 +245,12 @@ fun ProfileScreen(
 private fun UserProfileCardWithStats(
     userData: User,
     allWalks: List<Walk>,
-    decimalFormat: DecimalFormat
+    followersCount: Int?,
+    decimalFormat: DecimalFormat,
+    onNavigateToFriendsList: () -> Unit
 ) {
     val totalDistance = allWalks.sumOf { it.distanceCovered }
-    val level = calculateLevel(userData.totalWalks)
-    val nextLevelWalks = getNextLevelRequirement(level)
-    val progress = (userData.totalWalks.toFloat() / nextLevelWalks).coerceIn(0f, 1f)
+    val progress = userData.getProgressToNextLevel()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -257,7 +332,7 @@ private fun UserProfileCardWithStats(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = level.toString(),
+                            text = userData.currentLevel.toString(),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -272,7 +347,6 @@ private fun UserProfileCardWithStats(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Stats Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -280,7 +354,19 @@ private fun UserProfileCardWithStats(
                 StatItem(
                     value = userData.totalWalks.toString(),
                     label = "Walks",
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                VerticalDivider(
+                    modifier = Modifier.height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+
+                StatItem(
+                    value = followersCount?.toString() ?: "-",
+                    label = "Stalkers",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    onClick = onNavigateToFriendsList
                 )
 
                 VerticalDivider(
@@ -291,24 +377,13 @@ private fun UserProfileCardWithStats(
                 StatItem(
                     value = "${decimalFormat.format(totalDistance / 1000)}",
                     label = "Kilometers",
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                VerticalDivider(
-                    modifier = Modifier.height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                )
-
-                StatItem(
-                    value = "${(progress * 100).toInt()}%",
-                    label = "To Lvl ${level + 1}",
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Progress bar
+            // XP Progress bar
             Column {
                 LinearProgressIndicator(
                     progress = { progress },
@@ -316,12 +391,13 @@ private fun UserProfileCardWithStats(
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = MaterialTheme.colorScheme.primary,
+                    // progress line should use neon green to match Discover
+                    color = NeonGreen,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "${userData.totalWalks} / $nextLevelWalks walks",
+                    text = "${userData.getXPToNextLevel()} XP to Level ${userData.currentLevel + 1}",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.End)
@@ -335,10 +411,12 @@ private fun UserProfileCardWithStats(
 private fun StatItem(
     value: String,
     label: String,
-    color: Color
+    color: Color,
+    onClick: () -> Unit = {}
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
     ) {
         Text(
             text = value,
@@ -356,366 +434,319 @@ private fun StatItem(
 }
 
 @Composable
-private fun TabNavigation(
-    selectedTab: ProfileTab,
-    onTabSelected: (ProfileTab) -> Unit,
-    modifier: Modifier = Modifier
+private fun StreakCard(
+    streakData: StreakData,
+    todayWalks: List<Walk>,
+    dailyChallenges: List<UserChallenge> = emptyList()  // ADD THIS
 ) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            ProfileTab.entries.forEach { tab ->
-                TabButton(
-                    tab = tab,
-                    isSelected = selectedTab == tab,
-                    onClick = { onTabSelected(tab) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
+    // Check if at least one challenge is completed today OR if user has walked today
+    val hasCompletedChallenge = dailyChallenges.any { it.isCompleted }
+    val hasCompletedMinimum = hasCompletedChallenge || todayWalks.isNotEmpty()
 
-@Composable
-private fun TabButton(
-    tab: ProfileTab,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.height(42.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = tab.icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = if (isSelected)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = tab.displayName,
-                fontSize = 14.sp,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (isSelected)
-                    MaterialTheme.colorScheme.onSurface
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun OverviewTabContent(
-    userData: User?,
-    recentWalks: List<Walk>,
-    isLoading: Boolean,
-    onNavigateToWalkHistory: () -> Unit,
-    decimalFormat: DecimalFormat
-) {
-    if (isLoading) {
-        // Show skeleton for entire overview tab
-        OverviewTabSkeleton()
-    } else {
-        Column {
-            // Achievements Section
-            if (userData != null) {
-                AchievementsCompactSection(userData = userData)
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            // Recent Activity
-            RecentWalksSection(
-                walks = recentWalks,
-                isLoading = false, // Don't show nested loading
-                onViewAll = onNavigateToWalkHistory,
-                decimalFormat = decimalFormat
-            )
-        }
-    }
-}
-
-@Composable
-private fun AchievementsCompactSection(userData: User) {
-    val allBadges = getAllAchievementBadges(userData)
-    val unlockedCount = allBadges.count { it.isUnlocked }
-
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Achievements",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    text = "$unlockedCount/${allBadges.size}",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                allBadges.take(6).chunked(3).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        row.forEach { badge ->
-                            CompactBadge(badge = badge)
-                        }
-                        repeat(3 - row.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                    if (row != allBadges.take(6).chunked(3).last()) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CompactBadge(badge: BadgeWithStatus) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(80.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(
-                    if (badge.isUnlocked)
-                        badge.color.copy(alpha = 0.15f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = badge.icon,
-                contentDescription = badge.name,
-                tint = if (badge.isUnlocked) badge.color else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.size(28.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = badge.name,
-            fontSize = 11.sp,
-            color = if (badge.isUnlocked)
-                MaterialTheme.colorScheme.onSurface
-            else
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            textAlign = TextAlign.Center,
-            fontWeight = if (badge.isUnlocked) FontWeight.Medium else FontWeight.Normal,
-            maxLines = 1
-        )
-    }
-}
-
-@Composable
-private fun StatsTabContent(
-    weeklyStats: WeeklyStats?,
-    allWalks: List<Walk>,
-    isLoading: Boolean,
-    decimalFormat: DecimalFormat
-) {
-    if (isLoading) {
-        // Show skeleton for entire stats tab
-        StatsTabSkeleton()
-    } else if (weeklyStats != null && allWalks.isNotEmpty()) {
-        Column {
-            // Use the animated version with grey stat cards + graph
-            WeeklyProgressCardWithGraph(
-                stats = weeklyStats,
-                decimalFormat = decimalFormat,
-                walks = allWalks
-            )
-        }
-    } else {
-        EmptyStateCard(
-            icon = Icons.Outlined.Insights,
-            title = "No statistics yet",
-            subtitle = "Start walking to see your progress"
-        )
-    }
-}
-@Composable
-private fun WeeklyStatsCards(
-    stats: WeeklyStats,
-    decimalFormat: DecimalFormat
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        SmallStatCard(
-            value = stats.walks.toString(),
-            label = "Walks",
-            subtitle = "This Week",
-            icon = Icons.Outlined.DirectionsWalk,
-            color = Color(0xFF4CAF50),
-            modifier = Modifier.weight(1f)
-        )
-        SmallStatCard(
-            value = "${decimalFormat.format(stats.distance / 1000)}",
-            label = "Kilometers",
-            subtitle = "This Week",
-            icon = Icons.Outlined.Route,
-            color = Color(0xFF2196F3),
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun SmallStatCard(
-    value: String,
-    label: String,
-    subtitle: String,
-    icon: ImageVector,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
     Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(24.dp)
-            )
+            // Header row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Flame icon
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (hasCompletedMinimum)
+                                    Color(0xFFFFD700).copy(alpha = 0.15f)
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocalFireDepartment,
+                            contentDescription = null,
+                            tint = if (hasCompletedMinimum)
+                                Color(0xFFFFD700)
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "Current Streak",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "${streakData.currentStreak}",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "days",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Bonus badge (only if streak >= 7)
+                if (streakData.currentStreak >= 7) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.TrendingUp,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "+${calculateStreakBonusPercentage(streakData.currentStreak)}%",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = value,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = label,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = subtitle,
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
+
+            // Status indicator
+            Surface(
+                color = if (hasCompletedMinimum)
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                else
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = if (hasCompletedMinimum)
+                            Icons.Default.CheckCircle
+                        else
+                            Icons.Default.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (hasCompletedMinimum)
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else
+                            MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Complete 1 challenge to maintain streak",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (hasCompletedMinimum) 
+                             MaterialTheme.colorScheme.onSurfaceVariant
+                             else MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (hasCompletedMinimum) 
+                             androidx.compose.ui.text.style.TextDecoration.LineThrough 
+                             else null
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Removed Compact Stats
         }
     }
 }
 
+
 @Composable
-private fun WeeklyGraphCard(
-    stats: WeeklyStats,
-    walks: List<Walk>,
-    decimalFormat: DecimalFormat
-) {
+fun StreakCardSkeleton() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp)
+            modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "Weekly Activity",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            // Header row skeleton
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Flame icon placeholder
+                    ShimmerEffect(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                    )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                    Column {
+                        ShimmerEffect(
+                            modifier = Modifier
+                                .width(80.dp)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            ShimmerEffect(
+                                modifier = Modifier
+                                    .width(40.dp)
+                                    .height(24.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                            )
+                        }
+                    }
+                }
 
-            if (stats.dailyData.isNotEmpty()) {
-                WeeklyGraph(
-                    dailyData = stats.dailyData,
+                // Bonus badge placeholder
+                ShimmerEffect(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
+                        .width(60.dp)
+                        .height(24.dp)
+                        .clip(RoundedCornerShape(8.dp))
                 )
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Status indicator skeleton
+            ShimmerEffect(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Compact stats skeleton
+            // Removed Compact stats skeleton
         }
     }
 }
 
-// Helper functions
-fun calculateLevel(totalWalks: Int): Int {
+private fun calculateStreakBonusPercentage(currentStreak: Int): Int {
     return when {
-        totalWalks < 5 -> 1
-        totalWalks < 15 -> 2
-        totalWalks < 30 -> 3
-        totalWalks < 50 -> 4
-        totalWalks < 100 -> 5
-        totalWalks < 200 -> 6
-        totalWalks < 500 -> 7
-        else -> 8
+        currentStreak >= 90 -> 35
+        currentStreak >= 60 -> 30
+        currentStreak >= 30 -> 25
+        currentStreak >= 14 -> 20
+        currentStreak >= 7 -> 15
+        else -> 10
     }
 }
 
-fun getNextLevelRequirement(currentLevel: Int): Int {
-    return when (currentLevel) {
-        1 -> 5
-        2 -> 15
-        3 -> 30
-        4 -> 50
-        5 -> 100
-        6 -> 200
-        7 -> 500
-        8 -> 1000
-        else -> 1000
+@Composable
+fun RecentWalkButton(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = true, onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsWalk,
+                        contentDescription = null,
+                        tint = NeonGreen,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = "Walk History",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "View your recent walks",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }

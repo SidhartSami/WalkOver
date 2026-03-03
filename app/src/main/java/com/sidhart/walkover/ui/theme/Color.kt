@@ -2,32 +2,49 @@ package com.sidhart.walkover.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// === DARK THEME COLORS (InDrive Inspired) ===
-val NeonGreen = Color(0xFFC0F11C)
-val Black = Color(0xFF000000)
-val White = Color(0xFFFFFFFF)
-val DarkGray = Color(0xFF1A1A1A)
-val MediumGray = Color(0xFF333333)
-val LightGray = Color(0xFF666666)
-val ErrorRed = Color(0xFFFF3B30)
+// =============================================
+// WALKOVER BRAND COLORS
+// =============================================
+
+// Primary — Neon Lime (brand identity, CTAs)
+val NeonGreen        = Color(0xFFC0F11C)
+val NeonGreenDim     = Color(0xFF8FB312)   // Pressed / darker variant
+
+// Secondary — Electric Blue (Compete mode / info / map overlays)
+val ElectricBlue        = Color(0xFF00B4FF)
+val ElectricBlueDim     = Color(0xFF007DB5)
+
+// Tertiary — Coral Orange (XP / streaks / highlights)
+// NOTE: Purple has been intentionally REMOVED from the palette
+val CoralOrange        = Color(0xFFFF6B35)
+val CoralOrangeDim     = Color(0xFFCC4A18)
+
+// Success / Error / Warning
 val SuccessGreen = Color(0xFF34C759)
+val ErrorRed     = Color(0xFFFF3B30)
+val WarningAmber = Color(0xFFFFB300)
 
-// Semi-transparent variants for dark theme
-val NeonGreenAlpha50 = Color(0x80C0F11C)
+// =============================================
+// DARK THEME SURFACES
+// =============================================
+val DeepMidnight  = Color(0xFF0A0A0F)   // True background — near-black, blue-tinted
+val RichDarkGray  = Color(0xFF111118)   // Surface — very dark, slightly elevated
+val SoftDarkGray  = Color(0xFF1A1A24)   // Surface variant
+val BorderGray    = Color(0xFF282836)   // Subtle borders
+val MutedText     = Color(0xFF8888AA)   // Secondary text on dark
+val White         = Color(0xFFFFFFFF)
+val Black         = Color(0xFF000000)
+
+// =============================================
+// LIGHT THEME SURFACES
+// =============================================
+val LightBackground     = Color(0xFFF5F7FA)   // Clean off-white
+val LightSurface        = Color(0xFFFFFFFF)
+val LightSurfaceVariant = Color(0xFFEDF0F5)
+val LightBorder         = Color(0xFFDDE1EA)
+val DarkText            = Color(0xFF111827)
+val MediumText          = Color(0xFF6B7280)
+
+
+// Utility overlays
 val BlackAlpha80 = Color(0xCC000000)
-val WhiteAlpha20 = Color(0x33FFFFFF)
-
-// === LIGHT THEME COLORS ===
-val LightNeonGreen = Color(0xFF9FCC00) // Slightly darker for better contrast
-val LightBackground = Color(0xFFF5F5F5)
-val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF0F0F0)
-val DarkText = Color(0xFF1A1A1A)
-val MediumText = Color(0xFF666666)
-val LightBorder = Color(0xFFE0E0E0)
-val LightErrorRed = Color(0xFFDC3545)
-
-// Semi-transparent variants for light theme
-val LightGreenAlpha50 = Color(0x809FCC00)
-val BlackAlpha10 = Color(0x1A000000)
-val BlackAlpha30 = Color(0x4D000000)

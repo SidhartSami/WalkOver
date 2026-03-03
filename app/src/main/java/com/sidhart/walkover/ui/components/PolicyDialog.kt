@@ -1,8 +1,6 @@
 package com.sidhart.walkover.ui.components
 
-import android.content.Context
 import android.webkit.WebView
-import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,7 +26,6 @@ fun PolicyDialog(
     assetFileName: String,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isVisible by remember { mutableStateOf(false) }
 

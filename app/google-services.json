@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "950347281551-q5h5ujadff9odi5lqkv8m5blbr7kmsgt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sidhart.walkover",
+            "certificate_hash": "9ac5fa029900a369a7d0c994e1d0ac08a3369474"
+          }
+        },
+        {
           "client_id": "950347281551-qard33gmqs6c4npbet3a910015lrs69o.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -30,7 +38,7 @@
           }
         },
         {
-          "client_id": "950347281551-57csukrgmjkg2n4nvkpp41r16np9ert3.apps.googleusercontent.com",
+          "client_id": "950347281551-sd6f7pqr6hiev1e5455jqjrfljavvbgi.apps.googleusercontent.com",
           "client_type": 3
         }
       ],

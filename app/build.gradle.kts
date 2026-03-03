@@ -13,8 +13,8 @@ android {
         applicationId = "com.sidhart.walkover"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 12
+        versionName = "2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -87,4 +87,10 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    // Image Loading
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    
+    // Gson for JSON serialization (offline queue)
+    implementation("com.google.code.gson:gson:2.10.1")
 }

@@ -4,16 +4,15 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.location.Location
-import androidx.core.content.ContextCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
-import com.sidhart.walkover.R
 import com.sidhart.walkover.data.LocationPoint
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import kotlin.math.*
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.drawable.toDrawable
 
 object MapUtils {
 
@@ -21,7 +20,8 @@ object MapUtils {
      * Check if the current theme is dark mode
      */
     fun isDarkMode(context: Context): Boolean {
-        val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val nightModeFlags =
+            context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         return nightModeFlags == Configuration.UI_MODE_NIGHT_YES
     }
 
@@ -30,9 +30,9 @@ object MapUtils {
      */
     fun getTrackingPolylineColor(context: Context): Int {
         return if (isDarkMode(context)) {
-            android.graphics.Color.parseColor("#39FF14") // Neon Green for dark mode
+            "#39FF14".toColorInt() // Neon Green for dark mode
         } else {
-            android.graphics.Color.parseColor("#7CB342") // Material Green for light mode
+            "#7CB342".toColorInt() // Material Green for light mode
         }
     }
 
@@ -41,41 +41,48 @@ object MapUtils {
      */
     fun getSavedWalkPolylineColor(context: Context): Int {
         return if (isDarkMode(context)) {
-            android.graphics.Color.parseColor("#C0F11C") // Neon Green for dark mode
+            "#C0F11C".toColorInt() // Neon Green for dark mode
         } else {
-            android.graphics.Color.parseColor("#558B2F") // Darker green for light mode
+            "#558B2F".toColorInt() // Darker green for light mode
         }
     }
 
     /**
-     * Get the appropriate location pin icon based on current theme
+     * Create a simple dot marker drawable with outline
+     */
+    fun createDotMarkerDrawable(context: Context, fillColor: Int, outlineColor: Int): Drawable {
+        val sizePx = (16 * context.resources.displayMetrics.density).toInt()
+        val borderPx = (3 * context.resources.displayMetrics.density).toInt()
+
+        val bitmap = createBitmap(sizePx, sizePx)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        // Draw outline
+        paint.color = outlineColor
+        paint.style = android.graphics.Paint.Style.FILL
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f, paint)
+
+        // Draw inner circle
+        paint.color = fillColor
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, (sizePx / 2f) - borderPx, paint)
+
+        return bitmap.toDrawable(context.resources)
+    }
+
+    /**
+     * Get the appropriate location pin icon based on current theme, now as a beautiful neon dot
      */
     fun getLocationPinIcon(context: Context): Drawable? {
         return try {
-            val iconRes = if (isDarkMode(context)) {
-                R.drawable.ic_location_pin_dark
-            } else {
-                R.drawable.ic_location_pin_light
-            }
-            ContextCompat.getDrawable(context, iconRes)
+            val outlineCol =
+                if (isDarkMode(context)) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            val fillCol = "#C0F11C".toColorInt() // Neon Green
+            createDotMarkerDrawable(context, fillCol, outlineCol)
         } catch (e: Exception) {
-            android.util.Log.w("MapUtils", "Could not load location pin icon", e)
+            android.util.Log.w("MapUtils", "Could not create location pin icon", e)
             null
         }
-    }
-
-    /**
-     * Convert LocationPoint to GeoPoint for osmdroid
-     */
-    fun LocationPoint.toGeoPoint(): GeoPoint {
-        return GeoPoint(this.latitude, this.longitude)
-    }
-
-    /**
-     * Convert Location to GeoPoint for osmdroid
-     */
-    fun Location.toGeoPoint(): GeoPoint {
-        return GeoPoint(this.latitude, this.longitude)
     }
 
     /**
@@ -85,42 +92,6 @@ object MapUtils {
         return GeoPoint(locationPoint.latitude, locationPoint.longitude)
     }
 
-    /**
-     * Convert Location to GeoPoint for osmdroid (static method)
-     */
-    fun convertLocationToGeoPoint(location: Location): GeoPoint {
-        return GeoPoint(location.latitude, location.longitude)
-    }
-
-    /**
-     * Calculate distance between two GeoPoints in meters
-     */
-    fun calculateDistance(point1: GeoPoint, point2: GeoPoint): Double {
-        val lat1 = Math.toRadians(point1.latitude)
-        val lat2 = Math.toRadians(point2.latitude)
-        val deltaLat = Math.toRadians(point2.latitude - point1.latitude)
-        val deltaLon = Math.toRadians(point2.longitude - point1.longitude)
-
-        val a = sin(deltaLat / 2) * sin(deltaLat / 2) +
-                cos(lat1) * cos(lat2) *
-                sin(deltaLon / 2) * sin(deltaLon / 2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-        return 6371000 * c // Earth's radius in meters
-    }
-
-    /**
-     * Calculate total distance of a route
-     */
-    fun calculateRouteDistance(points: List<GeoPoint>): Double {
-        if (points.size < 2) return 0.0
-
-        var totalDistance = 0.0
-        for (i in 1 until points.size) {
-            totalDistance += calculateDistance(points[i - 1], points[i])
-        }
-        return totalDistance
-    }
 
     /**
      * Add a marker to the map with professional location pin icon
@@ -142,7 +113,7 @@ object MapUtils {
             val locationIcon = getLocationPinIcon(mapView.context)
             locationIcon?.let { icon ->
                 marker.icon = icon
-                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             }
         }
 
@@ -162,8 +133,12 @@ object MapUtils {
     ): Polyline {
         val polyline = Polyline()
         polyline.setPoints(points)
-        polyline.color = color ?: getTrackingPolylineColor(mapView.context)
-        polyline.width = width
+        polyline.outlinePaint.color = color ?: getTrackingPolylineColor(mapView.context)
+        polyline.outlinePaint.strokeWidth = width
+        polyline.outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+        polyline.outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+        polyline.outlinePaint.isAntiAlias = true
+        polyline.outlinePaint.pathEffect = android.graphics.CornerPathEffect(50f)
         mapView.overlays.add(polyline)
         mapView.invalidate()
         return polyline
@@ -171,14 +146,17 @@ object MapUtils {
 
     /**
      * Center map on a specific location with zoom
+     * If currently zoomed out, smoothly zooms in to minZoomLevel.
      */
     fun centerMapOnLocation(
         mapView: MapView,
         geoPoint: GeoPoint,
-        zoomLevel: Double = 15.0
+        minZoomLevel: Double = 17.5
     ) {
-        mapView.controller.setCenter(geoPoint)
-        mapView.controller.setZoom(zoomLevel)
+        val currentZoom = mapView.zoomLevelDouble
+        val targetZoom = if (currentZoom < minZoomLevel) minZoomLevel else currentZoom
+        
+        mapView.controller.animateTo(geoPoint, targetZoom, 800L)
     }
 
     /**
@@ -199,32 +177,30 @@ object MapUtils {
         onSuccess: (Location) -> Unit,
         onFailure: (Exception) -> Unit
     ) {
-        val fusedLocationClient: FusedLocationProviderClient =
-            LocationServices.getFusedLocationProviderClient(context)
+        val fusedLocationClient: com.google.android.gms.location.FusedLocationProviderClient =
+            com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
 
         try {
-            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                if (location != null) {
-                    onSuccess(location)
-                } else {
-                    onFailure(Exception("Location is null"))
+            val cancellationTokenSource = com.google.android.gms.tasks.CancellationTokenSource()
+            fusedLocationClient.getCurrentLocation(
+                com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
+                cancellationTokenSource.token
+            )
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        onSuccess(location)
+                    } else {
+                        // Fallback to last known if current location fails
+                        fusedLocationClient.lastLocation.addOnSuccessListener { lastLocation ->
+                            if (lastLocation != null) onSuccess(lastLocation)
+                            else onFailure(Exception("Location is completely null"))
+                        }.addOnFailureListener { e -> onFailure(e) }
+                    }
+                }.addOnFailureListener { exception ->
+                    onFailure(exception)
                 }
-            }.addOnFailureListener { exception ->
-                onFailure(exception)
-            }
         } catch (e: SecurityException) {
             onFailure(e)
-        }
-    }
-
-    /**
-     * Format distance in meters to human readable string
-     */
-    fun formatDistance(distanceInMeters: Double): String {
-        return when {
-            distanceInMeters < 1000 -> "${distanceInMeters.toInt()}m"
-            distanceInMeters < 10000 -> "${(distanceInMeters / 1000).let { "%.1f".format(it) }}km"
-            else -> "${(distanceInMeters / 1000).toInt()}km"
         }
     }
 
@@ -232,40 +208,25 @@ object MapUtils {
      * Add modern marker with theme-aware styling
      */
     fun addModernMarker(
-        mapView: org.osmdroid.views.MapView,
-        geoPoint: org.osmdroid.util.GeoPoint,
+        mapView: MapView,
+        geoPoint: GeoPoint,
         title: String,
         snippet: String = "",
         isLocationMarker: Boolean = false,
-        isActiveTracking: Boolean = false
-    ): org.osmdroid.views.overlay.Marker {
-        val marker = org.osmdroid.views.overlay.Marker(mapView)
+    ): Marker {
+        val marker = Marker(mapView)
         marker.position = geoPoint
         marker.title = title
         marker.snippet = snippet
 
         if (isLocationMarker) {
-            // Try to use custom drawable, fallback to theme-appropriate default
-            val drawable = try {
-                if (isActiveTracking) {
-                    androidx.core.content.ContextCompat.getDrawable(
-                        mapView.context,
-                        R.drawable.location_pin_active
-                    )
-                } else {
-                    androidx.core.content.ContextCompat.getDrawable(
-                        mapView.context,
-                        R.drawable.location_pin
-                    )
-                }
-            } catch (e: Exception) {
-                // Fallback to theme-appropriate icon
-                getLocationPinIcon(mapView.context)
-            }
+            // Use the modernized neon dot with outline
+            val drawable = getLocationPinIcon(mapView.context)
             marker.icon = drawable
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        } else {
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         }
-
-        marker.setAnchor(org.osmdroid.views.overlay.Marker.ANCHOR_CENTER, org.osmdroid.views.overlay.Marker.ANCHOR_BOTTOM)
         mapView.overlays.add(marker)
         mapView.invalidate()
 
@@ -278,5 +239,31 @@ object MapUtils {
     fun clearMap(mapView: MapView) {
         mapView.overlays.clear()
         mapView.invalidate()
+    }
+
+    /**
+     * Calculate the area of a closed polygon in square meters using the Shoelace Formula.
+     * Assumes points are given in order around the perimeter.
+     */
+    fun calculatePolygonArea(points: List<GeoPoint>): Double {
+        if (points.size < 3) return 0.0
+
+        var area = 0.0
+        val earthRadius = 6378137.0 // Earth's radius in meters
+
+        // Convert coordinates to radians and apply shoelace on a spherical approximate projection
+        for (i in points.indices) {
+            val p1 = points[i]
+            val p2 = points[(i + 1) % points.size]
+
+            val x1 = Math.toRadians(p1.longitude) * earthRadius * cos(Math.toRadians(p1.latitude))
+            val y1 = Math.toRadians(p1.latitude) * earthRadius
+            val x2 = Math.toRadians(p2.longitude) * earthRadius * cos(Math.toRadians(p2.latitude))
+            val y2 = Math.toRadians(p2.latitude) * earthRadius
+
+            area += (x1 * y2) - (x2 * y1)
+        }
+
+        return abs(area) / 2.0
     }
 }

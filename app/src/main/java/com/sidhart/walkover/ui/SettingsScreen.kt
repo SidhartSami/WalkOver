@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,308 +21,368 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import com.sidhart.walkover.ui.theme.NeonGreenDim
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.sidhart.walkover.service.FirebaseService
-import kotlinx.coroutines.launch
 import com.sidhart.walkover.ui.components.PolicyDialog
+import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    modifier: Modifier = Modifier,
     firebaseService: FirebaseService,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onNavigateBack: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var showTermsOfService by remember { mutableStateOf(false) }
-
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(scrollState)
-            .padding(16.dp)
+
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        // Header
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(16.dp)
         ) {
-            Text(
-                text = "Settings",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Icon(
-                imageVector = Icons.Outlined.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
-        }
 
-        // About Section
-        SettingsSectionHeader("About", Icons.Outlined.Info)
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Code,
-                    title = "Version",
-                    subtitle = "2.0.0",
-                    onClick = null
+            // ── Header ───────────────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onNavigateBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Settings",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+            }
 
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
 
-                SettingsItem(
-                    icon = Icons.Outlined.Star,
-                    title = "Rate App",
-                    subtitle = "Share your feedback on Play Store",
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("market://details?id=${context.packageName}")
+            // ── ABOUT ────────────────────────────────────────────────────────
+            SettingsSectionHeader("About", Icons.Outlined.Info)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SettingsItem(
+                        icon = Icons.Outlined.Code,
+                        title = "Version",
+                        subtitle = "3.0",
+                        onClick = null
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Outlined.Star,
+                        title = "Rate App",
+                        subtitle = "Share your feedback on Play Store",
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse("market://details?id=${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Play Store not available", Toast.LENGTH_SHORT).show()
                             }
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Play Store not available", Toast.LENGTH_SHORT).show()
                         }
-                    }
-                )
+                    )
 
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
 
-                SettingsItem(
-                    icon = Icons.Outlined.Email,
-                    title = "Contact Support",
-                    subtitle = "contact.walkover@gmail.com",
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("mailto:contact.walkover@gmail.com")
-                                putExtra(Intent.EXTRA_SUBJECT, "WalkOver Support Request")
+                    SettingsItem(
+                        icon = Icons.Outlined.Email,
+                        title = "Contact Support",
+                        subtitle = "contact.walkover@gmail.com",
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:contact.walkover@gmail.com")
+                                    putExtra(Intent.EXTRA_SUBJECT, "WalkOver Support Request")
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Send Email"))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Email app not available", Toast.LENGTH_SHORT).show()
                             }
-                            context.startActivity(Intent.createChooser(intent, "Send Email"))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Email app not available", Toast.LENGTH_SHORT).show()
                         }
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Outlined.PrivacyTip,
+                        title = "Privacy Policy",
+                        subtitle = "View our privacy policy",
+                        onClick = { showPrivacyPolicy = true }
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Outlined.Description,
+                        title = "Terms of Service",
+                        subtitle = "View terms and conditions",
+                        onClick = { showTermsOfService = true }
+                    )
+                }
+            }
+
+            // ── ACCOUNT ACTIONS ───────────────────────────────────────────────
+            SettingsSectionHeader("Account Actions", Icons.Outlined.ExitToApp)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Button(
+                        onClick = { showLogoutDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Logout,
+                            contentDescription = "Logout",
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Logout",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
-                )
+                }
+            }
 
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
+            // ── Footer ────────────────────────────────────────────────────────
+            Spacer(modifier = Modifier.height(16.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val iconDrawable = remember { 
+                    ContextCompat.getDrawable(context, com.sidhart.walkover.R.mipmap.ic_launcher_round) 
+                }
 
-                // Replace the Privacy Policy SettingsItem with:
-                SettingsItem(
-                    icon = Icons.Outlined.PrivacyTip,
-                    title = "Privacy Policy",
-                    subtitle = "View our privacy policy",
-                    onClick = {
-                        showPrivacyPolicy = true
-                    }
+                if (iconDrawable != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = iconDrawable.toBitmap().asImageBitmap(),
+                        contentDescription = "WalkOver Logo",
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "WalkOver",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    letterSpacing = 1.sp
                 )
-
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-
-                // Replace the Terms of Service SettingsItem with:
-                SettingsItem(
-                    icon = Icons.Outlined.Description,
-                    title = "Terms of Service",
-                    subtitle = "View terms and conditions",
-                    onClick = {
-                        showTermsOfService = true
-                    }
+                Text(
+                    text = "Capture the world, one step at a time",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 32.dp)
                 )
             }
         }
 
-        // Account Actions
-        SettingsSectionHeader("Account Actions", Icons.Outlined.ExitToApp)
+        // ── Dialogs ───────────────────────────────────────────────────────────
+        if (showPrivacyPolicy) {
+            PolicyDialog(
+                title = "Privacy Policy",
+                assetFileName = "privacy_policy.html",
+                onDismiss = { showPrivacyPolicy = false }
+            )
+        }
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Button(
-                    onClick = { showLogoutDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Logout,
-                        contentDescription = "Logout",
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
+        if (showTermsOfService) {
+            PolicyDialog(
+                title = "Terms of Service",
+                assetFileName = "terms_of_service.html",
+                onDismiss = { showTermsOfService = false }
+            )
+        }
+
+        if (showLogoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showLogoutDialog = false },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(24.dp),
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.errorContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Logout,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                },
+                title = {
                     Text(
                         text = "Logout",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
                     )
-
-                }
-            }
-        }
-
-        // Footer
-        Spacer(modifier = Modifier.height(16.dp))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.DirectionsWalk,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "WalkOver",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
-            Text(
-                text = "Capture the world, one step at a time",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-        }
-    }
-    if (showPrivacyPolicy) {
-        PolicyDialog(
-            title = "Privacy Policy",
-            assetFileName = "privacy_policy.html",
-            onDismiss = { showPrivacyPolicy = false }
-        )
-    }
-
-    if (showTermsOfService) {
-        PolicyDialog(
-            title = "Terms of Service",
-            assetFileName = "terms_of_service.html",
-            onDismiss = { showTermsOfService = false }
-        )
-    }
-    // Logout Confirmation Dialog
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.errorContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Logout,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "Logout",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Text(
-                    text = "Are you sure you want to logout? Your progress is saved and will be restored when you login again.",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center,
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showLogoutDialog = false
-                        scope.launch {
-                            firebaseService.signOut()
-                            onLogout()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Logout", fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showLogoutDialog = false },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
+                },
+                text = {
                     Text(
-                        text = "Cancel",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
+                        text = "Are you sure you want to logout? Your progress is saved and will be restored when you login again.",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        fontSize = 14.sp
                     )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showLogoutDialog = false
+                            scope.launch {
+                                firebaseService.signOut()
+                                onLogout()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Logout", fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showLogoutDialog = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 }
+
+// ── Reusable chip composable ──────────────────────────────────────────────────
+
+@Composable
+fun MapStyleChip(
+    style: MapStyle,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val bgColor = if (isSelected)
+        MaterialTheme.colorScheme.primary
+    else
+        MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (isSelected)
+        MaterialTheme.colorScheme.onPrimary
+    else
+        MaterialTheme.colorScheme.onSurfaceVariant
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = bgColor,
+        tonalElevation = if (isSelected) 0.dp else 2.dp,
+        shadowElevation = if (isSelected) 6.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = style.emoji,
+                fontSize = 14.sp
+            )
+            Text(
+                text = style.displayName,
+                fontSize = 13.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = textColor
+            )
+        }
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 @Composable
 fun SettingsSectionHeader(text: String, icon: ImageVector) {
@@ -331,7 +393,7 @@ fun SettingsSectionHeader(text: String, icon: ImageVector) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = NeonGreenDim,
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -349,17 +411,14 @@ fun SettingsItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    iconColor: androidx.compose.ui.graphics.Color = NeonGreenDim,
     onClick: (() -> Unit)?
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (onClick != null) {
-                    Modifier.clickable { onClick() }
-                } else {
-                    Modifier
-                }
+                if (onClick != null) Modifier.clickable { onClick() } else Modifier
             )
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -368,13 +427,13 @@ fun SettingsItem(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .background(iconColor.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = iconColor,
                 modifier = Modifier.size(24.dp)
             )
         }

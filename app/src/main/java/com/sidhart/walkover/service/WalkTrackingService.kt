@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.Build
@@ -13,7 +12,6 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.sidhart.walkover.MainActivity
-import com.sidhart.walkover.R
 import com.sidhart.walkover.data.LiveWalkState
 import com.sidhart.walkover.data.LocationPoint
 import kotlinx.coroutines.*
@@ -70,7 +68,7 @@ class WalkTrackingService : Service() {
         super.onCreate()
         Log.d("WalkTrackingService", "Service created")
         locationService = LocationService(this)
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
     }
 
@@ -170,7 +168,7 @@ class WalkTrackingService : Service() {
                             Log.d("WalkTrackingService", "Location update: ${location.latitude}, ${location.longitude}, Points: ${updatedPoints.size}, Distance: $distance")
 
                             _walkState.value = currentState.copy(points = updatedPoints)
-                                .updateStats(distance, 0.0, updatedPoints.size)
+                                .updateStats(distance, updatedPoints.size)
 
                             // Update notification every 10 points to reduce overhead
                             if (updatedPoints.size % 10 == 0) {
@@ -192,9 +190,8 @@ class WalkTrackingService : Service() {
                 val currentState = _walkState.value
                 if (!currentState.isPaused && currentState.isTracking) {
                     // Update elapsed time in state while preserving distance and other stats
-                    val elapsedTime = System.currentTimeMillis() - currentState.startTime - currentState.totalPausedTime
                     val distance = calculateTotalDistance(currentState.points)
-                    val updatedState = currentState.updateStats(distance, 0.0, currentState.points.size)
+                    val updatedState = currentState.updateStats(distance, currentState.points.size)
                     _walkState.value = updatedState
                     updateNotification()
                 }

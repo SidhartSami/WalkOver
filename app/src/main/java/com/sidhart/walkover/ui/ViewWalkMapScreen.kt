@@ -1,38 +1,53 @@
 package com.sidhart.walkover.ui
 
+import android.content.Intent
+import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
+import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sidhart.walkover.data.Walk
 import com.sidhart.walkover.service.FirebaseService
+import com.sidhart.walkover.ui.theme.NeonGreen
 import com.sidhart.walkover.utils.MapUtils
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import java.io.File
+import java.io.FileOutputStream
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import com.sidhart.walkover.R
+import androidx.core.graphics.toColorInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,20 +57,101 @@ fun ViewWalkMapScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    
     var walk by remember { mutableStateOf<Walk?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var routeDrawn by remember { mutableStateOf(false) }
     
+    var isCapturingImage by remember { mutableStateOf(false) }
+    var showStatsOverlay by remember { mutableStateOf(true) }
+    var showImageSourceDialog by remember { mutableStateOf(false) }
+    
     val decimalFormat = remember { DecimalFormat("#,##0.##") }
-    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault()) }
+    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
     val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    
+    // Gallery launcher for picking image
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                isCapturingImage = true
+                
+                try {
+                    val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                        android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                            decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                            decoder.isMutableRequired = true
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                    }
+                    
+                    var errorMessage = "Unknown issue"
+                    // Generate Strava-style overlay on user's photo
+                    val storyBitmap = com.sidhart.walkover.utils.StoryTemplateGenerator
+                        .generateStravaStyleStory(
+                            context = context,
+                            userPhotoBitmap = bitmap,
+                            walk = walk!!,
+                            onError = { errorMessage = it }
+                        )
+                    
+                    if (storyBitmap != null) {
+                        // Use Android's native share sheet
+                        shareWithNativeSheet(context, storyBitmap)
+                    } else {
+                        Toast.makeText(context, "Story Error: $errorMessage", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to load image: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+                
+                isCapturingImage = false
+            }
+        }
+    }
+    
+    // Camera launcher for taking photo
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        bitmap?.let {
+            scope.launch {
+                isCapturingImage = true
+                
+                var errorMessage = "Unknown issue"
+                // Generate Strava-style overlay on user's photo
+                val storyBitmap = com.sidhart.walkover.utils.StoryTemplateGenerator
+                    .generateStravaStyleStory(
+                        context = context,
+                        userPhotoBitmap = bitmap,
+                        walk = walk!!,
+                        onError = { errorMessage = it }
+                    )
+                
+                if (storyBitmap != null) {
+                    // Use Android's native share sheet
+                    shareWithNativeSheet(context, storyBitmap)
+                } else {
+                    Toast.makeText(context, "Story Error: $errorMessage", Toast.LENGTH_LONG).show()
+                }
+                
+                isCapturingImage = false
+            }
+        }
+    }
     
     // Load walk data
     LaunchedEffect(walkId) {
-        routeDrawn = false // Reset when walkId changes
+        routeDrawn = false
         scope.launch {
             firebaseService.getWalks().fold(
                 onSuccess = { walks ->
@@ -67,7 +163,7 @@ fun ViewWalkMapScreen(
                 },
                 onFailure = { error ->
                     isLoading = false
-                    Toast.makeText(context, "Failed to load walk: ${error.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Failed to load walk", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -85,22 +181,60 @@ fun ViewWalkMapScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Walk Route",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "Walk Details",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                        walk?.let {
+                            Text(
+                                text = dateFormat.format(it.timestamp),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
                 },
+                actions = {
+                    // Toggle Stats Overlay
+                    IconButton(
+                        onClick = { showStatsOverlay = !showStatsOverlay }
+                    ) {
+                        Icon(
+                            imageVector = if (showStatsOverlay) Icons.Default.Visibility 
+                                         else Icons.Default.VisibilityOff,
+                            contentDescription = "Toggle Stats",
+                            tint = NeonGreen
+                        )
+                    }
+                    
+                    // Share Button - Choose Camera or Gallery
+                    IconButton(
+                        onClick = { 
+                            if (walk != null) {
+                                showImageSourceDialog = true
+                            }
+                        },
+                        enabled = walk != null
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Share Walk",
+                            tint = NeonGreen
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         }
@@ -112,50 +246,47 @@ fun ViewWalkMapScreen(
         ) {
             if (isLoading) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    CircularProgressIndicator()
-                }
-            } else if (walk == null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(32.dp)
+                    // Start Map (empty)
+                    AndroidView(
+                        factory = { ctx ->
+                            MapView(ctx).apply {
+                                setTileSource(
+                                    if (isDarkTheme) MapStyle.MAPBOX_DARK.tileSource
+                                    else MapStyle.MAPBOX_STREETS.tileSource
+                                )
+                                controller.setZoom(15.0)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    
+                    // Show Skeleton at bottom
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 20.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ErrorOutline,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Walk not found",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        CompactStatsCardSkeleton()
                     }
                 }
+            } else if (walk == null) {
+                EmptyWalkState()
             } else {
                 // Map View
                 AndroidView(
                     factory = { ctx ->
                         val map = MapView(ctx).apply {
                             setTileSource(
-                                if (isDarkTheme) MapStyle.CARTODB_DARK_MATTER.tileSource
-                                else MapStyle.CARTODB_POSITRON.tileSource
+                                if (isDarkTheme) MapStyle.MAPBOX_DARK.tileSource
+                                else MapStyle.MAPBOX_STREETS.tileSource
                             )
                             setMultiTouchControls(true)
                             controller.setZoom(15.0)
                         }
                         mapView = map
                         
-                        // Handle lifecycle
                         lifecycleOwner.lifecycle.addObserver(object : LifecycleEventObserver {
                             override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
                                 when (event) {
@@ -170,74 +301,63 @@ fun ViewWalkMapScreen(
                     },
                     modifier = Modifier.fillMaxSize(),
                     update = { map ->
-                        // Update tile source if theme changed
                         map.setTileSource(
-                            if (isDarkTheme) MapStyle.CARTODB_DARK_MATTER.tileSource
-                            else MapStyle.CARTODB_POSITRON.tileSource
+                            if (isDarkTheme) MapStyle.MAPBOX_DARK.tileSource
+                            else MapStyle.MAPBOX_STREETS.tileSource
                         )
                     }
                 )
                 
-                // Draw route when walk data is loaded
+                // Draw route with NEON GREEN
                 LaunchedEffect(walk) {
                     walk?.let { walkData ->
                         mapView?.let { map ->
                             if (walkData.polylineCoordinates.isNotEmpty() && !routeDrawn) {
-                                // Clear existing overlays
                                 map.overlays.clear()
                                 
-                                // Convert Firebase GeoPoint to osmdroid GeoPoint
                                 val geoPoints = walkData.polylineCoordinates.map { firebaseGeoPoint ->
                                     GeoPoint(firebaseGeoPoint.latitude, firebaseGeoPoint.longitude)
                                 }
                                 
-                                // Draw polyline
+                                // Draw NEON GREEN polyline
                                 val polyline = org.osmdroid.views.overlay.Polyline()
                                 polyline.setPoints(geoPoints)
-                                polyline.color = MapUtils.getSavedWalkPolylineColor(map.context)
-                                polyline.width = 10f
-                                polyline.title = "Walk Route"
+                                polyline.outlinePaint.color = "#C0F11C".toColorInt()
+                                polyline.outlinePaint.strokeWidth = 14f
+                                polyline.outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                                polyline.outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                                polyline.outlinePaint.isAntiAlias = true
+                                polyline.outlinePaint.pathEffect = android.graphics.CornerPathEffect(50f)
                                 map.overlays.add(polyline)
 
-                                // Replace the marker creation section in your LaunchedEffect(walk) block with this:
-
-// Add start marker with custom drawable
+                                // Start marker
                                 if (geoPoints.isNotEmpty()) {
-                                    val startPoint = geoPoints.first()
                                     val startMarker = Marker(map)
-                                    startMarker.position = startPoint
+                                    startMarker.position = geoPoints.first()
                                     startMarker.title = "Start"
-                                    startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-
-                                    // Use custom drawable for start marker
-                                    val startIcon = androidx.core.content.ContextCompat.getDrawable(
-                                        map.context,
-                                        R.drawable.location_pin_active
+                                    startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                    
+                                    val outlineCol = if (isDarkTheme) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                                    val startIcon = MapUtils.createDotMarkerDrawable(
+                                        map.context, "#EF4444".toColorInt(), outlineCol // Red
                                     )
                                     startMarker.icon = startIcon
-
                                     map.overlays.add(startMarker)
 
-                                    // Add end marker with same custom drawable
+                                    // End marker
                                     if (geoPoints.size > 1) {
-                                        val endPoint = geoPoints.last()
                                         val endMarker = Marker(map)
-                                        endMarker.position = endPoint
+                                        endMarker.position = geoPoints.last()
                                         endMarker.title = "End"
-                                        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-
-                                        // Use same drawable for end marker
-                                        val endIcon = androidx.core.content.ContextCompat.getDrawable(
-                                            map.context,
-                                            R.drawable.location_pin_active
+                                        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                        val endIcon = MapUtils.createDotMarkerDrawable(
+                                            map.context, "#22C55E".toColorInt(), outlineCol // Green
                                         )
                                         endMarker.icon = endIcon
-
                                         map.overlays.add(endMarker)
                                     }
 
-                                    // Fit map to show entire route
-                                    MapUtils.fitMapToPoints(map, geoPoints, padding = 100)
+                                    MapUtils.fitMapToPoints(map, geoPoints, padding = 150)
                                 }
                                 map.invalidate()
                                 routeDrawn = true
@@ -246,56 +366,310 @@ fun ViewWalkMapScreen(
                     }
                 }
                 
-                // Walk Info Card (overlay at bottom)
+                // Compact Stats Overlay
                 walk?.let { walkData ->
-                    Surface(
+                    AnimatedVisibility(
+                        visible = showStatsOverlay,
+                        enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                        exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        shadowElevation = 8.dp
+                            .zIndex(10f)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp)
+                        CompactStatsCard(
+                            walk = walkData,
+                            decimalFormat = decimalFormat,
+                            timeFormat = timeFormat
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Processing indicator
+        if (isCapturingImage) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.9f))
+                    .zIndex(100f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    CircularProgressIndicator(color = NeonGreen, strokeWidth = 4.dp)
+                    Text(
+                        "Creating your story...",
+                        color = NeonGreen,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "This will look amazing!",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+        
+        // Image Source Selection Dialog
+        if (showImageSourceDialog) {
+            AlertDialog(
+                onDismissRequest = { showImageSourceDialog = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PhotoLibrary,
+                            contentDescription = null,
+                            tint = NeonGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Text(
+                            "Choose Image Source",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            "Select how you want to add a photo to your walk story:",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        // Camera Option
+                        Surface(
+                            onClick = {
+                                showImageSourceDialog = false
+                                cameraLauncher.launch(null)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            shadowElevation = 2.dp
                         ) {
-                            // Date and Time
-                            Text(
-                                text = dateFormat.format(walkData.timestamp),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Stats Row
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                WalkStatChip(
-                                    icon = Icons.Outlined.Route,
-                                    label = "Distance",
-                                    value = "${decimalFormat.format(walkData.distanceCovered / 1000)} km",
-                                    color = Color(0xFF2196F3)
+                                Icon(
+                                    imageVector = Icons.Default.PhotoCamera,
+                                    contentDescription = null,
+                                    tint = NeonGreen,
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                WalkStatChip(
-                                    icon = Icons.Outlined.Timer,
-                                    label = "Duration",
-                                    value = formatDuration(walkData.duration),
-                                    color = Color(0xFF4CAF50)
+                                Column {
+                                    Text(
+                                        "Take Photo",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = Color.Black
+                                    )
+                                    Text(
+                                        "Use camera to capture a moment",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                        }
+                        
+                        // Gallery Option
+                        Surface(
+                            onClick = {
+                                showImageSourceDialog = false
+                                galleryLauncher.launch("image/*")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            shadowElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = null,
+                                    tint = NeonGreen,
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                WalkStatChip(
-                                    icon = Icons.Outlined.LocationOn,
-                                    label = "Points",
-                                    value = walkData.polylineCoordinates.size.toString(),
-                                    color = Color(0xFFFF9800)
-                                )
+                                Column {
+                                    Text(
+                                        "Choose from Gallery",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = Color.Black
+                                    )
+                                    Text(
+                                        "Select an existing photo",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
                             }
                         }
                     }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showImageSourceDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun CompactStatsCard(
+    walk: Walk,
+    decimalFormat: DecimalFormat,
+    timeFormat: SimpleDateFormat,
+    modifier: Modifier = Modifier
+) {
+    val distanceKm = walk.distanceCovered / 1000.0
+    val durationMinutes = walk.duration / 60000.0
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+        shadowElevation = 12.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            // Neon Green accent bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                NeonGreen,
+                                NeonGreen.copy(alpha = 0.6f)
+                            )
+                        )
+                    )
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Compact Stats Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Distance - Prominent
+                Column(
+                    modifier = Modifier.weight(1.3f)
+                ) {
+                    Text(
+                        text = "DISTANCE",
+                        fontSize = 9.sp,
+                        letterSpacing = 1.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = decimalFormat.format(distanceKm),
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Black,
+                            color = NeonGreen
+                        )
+                        Text(
+                            text = "km",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                }
+                
+                // Time
+                CompactStatBox(
+                    icon = Icons.Outlined.Timer,
+                    label = "TIME",
+                    value = formatDurationLocal(walk.duration),
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Speed
+                val speedKmH = if (durationMinutes > 0) distanceKm / (durationMinutes / 60.0) else 0.0
+                CompactStatBox(
+                    icon = Icons.Outlined.Speed,
+                    label = "SPEED",
+                    value = String.format(Locale.US, "%.1f", speedKmH),                    unit = "km/h",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Additional Info
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.CalendarToday,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = NeonGreen
+                    )
+                    Text(
+                        text = timeFormat.format(walk.timestamp),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(NeonGreen)
+                    )
+                    Text(
+                        text = "${walk.polylineCoordinates.size} pts",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -303,34 +677,137 @@ fun ViewWalkMapScreen(
 }
 
 @Composable
-fun WalkStatChip(
+fun CompactStatBox(
+    modifier: Modifier = Modifier,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     value: String,
-    color: Color
+    unit: String = ""
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier,
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = color,
-            modifier = Modifier.size(20.dp)
+            tint = NeonGreen,
+            modifier = Modifier.size(16.dp)
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = value,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (unit.isNotEmpty()) {
+                    Text(
+                        text = unit,
+                        fontSize = 8.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                }
+            }
+            
+            Text(
+                text = label,
+                fontSize = 9.sp,
+                letterSpacing = 0.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+fun EmptyWalkState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.error
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = value,
-            fontSize = 14.sp,
+            text = "Walk not found",
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = label,
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = "This walk may have been deleted",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
     }
 }
 
+// Helper functions
+fun formatDurationLocal(millis: Long): String {
+    val seconds = (millis / 1000) % 60
+    val minutes = (millis / (1000 * 60)) % 60
+    val hours = millis / (1000 * 60 * 60)
 
+    return when {
+        hours > 0 -> String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+        else -> String.format(Locale.US, "%d:%02d", minutes, seconds)
+    }
+}
+
+// Native Android Share Sheet
+fun shareWithNativeSheet(context: android.content.Context, bitmap: Bitmap) {
+    try {
+        val file = saveBitmapToFile(context, bitmap, "walkover_story.jpg")
+        
+        if (file != null) {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, "Check out my walk! 🚶‍♂️💪 #WalkOver")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            
+            // Use Android's native share sheet
+            context.startActivity(Intent.createChooser(intent, "Share your walk"))
+        } else {
+            Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "Failed to share: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun saveBitmapToFile(context: android.content.Context, bitmap: Bitmap, fileName: String): File? {
+    return try {
+        val file = File(context.cacheDir, fileName)
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+        }
+        file
+    } catch (_: Exception) {
+        null
+    }
+}

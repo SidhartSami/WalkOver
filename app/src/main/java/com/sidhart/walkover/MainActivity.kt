@@ -6,18 +6,19 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Bundle
+import java.util.Locale
+import androidx.core.graphics.toColorInt
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,41 +26,39 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sidhart.walkover.data.*
 import com.sidhart.walkover.service.FirebaseService
 import com.sidhart.walkover.service.LocationService
 import com.sidhart.walkover.service.WalkTrackingService
+import com.sidhart.walkover.service.NetworkMonitor
+import com.sidhart.walkover.service.OfflineQueueManager
 import com.sidhart.walkover.ui.*
 import com.sidhart.walkover.ui.theme.WalkOverTheme
 import com.sidhart.walkover.utils.MapUtils
+import com.sidhart.walkover.utils.AppPreferencesManager
+import com.sidhart.walkover.ui.DiscoverScreen
+import com.sidhart.walkover.ui.SearchFriendsScreen
+import com.sidhart.walkover.ui.FriendsListScreen
+import com.sidhart.walkover.ui.LeaderboardScreen
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.content.ComponentName
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
-import com.sidhart.walkover.utils.AppPreferencesManager
 
-// Top-level helper functions
 @Composable
 fun rememberLocationState(context: Context): State<Boolean> {
     return produceState(initialValue = isLocationEnabled(context)) {
@@ -80,6 +79,8 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var locationService: LocationService
     private lateinit var firebaseService: FirebaseService
+    private lateinit var networkMonitor: NetworkMonitor
+    private lateinit var offlineQueueManager: OfflineQueueManager
     var walkTrackingService: WalkTrackingService? = null
         private set
     var isServiceBound = false
@@ -128,10 +129,30 @@ class MainActivity : ComponentActivity() {
 
         locationService = LocationService(this)
         firebaseService = FirebaseService()
+        
+        // Initialize offline queue manager
+        offlineQueueManager = OfflineQueueManager(this, firebaseService)
+        firebaseService.offlineQueueManager = offlineQueueManager
+        
+        // Initialize network monitor
+        networkMonitor = NetworkMonitor(this)
+        networkMonitor.startMonitoring()
+        
+        // Monitor network connectivity and process pending operations when online
+        lifecycleScope.launch {
+            networkMonitor.isConnected.collect { isConnected ->
+                if (isConnected) {
+                    android.util.Log.d("MainActivity", "🌐 Internet connected - processing pending operations")
+                    offlineQueueManager.processPendingOperations()
+                } else {
+                    android.util.Log.d("MainActivity", "📡 Internet disconnected")
+                }
+            }
+        }
 
         // Bind to WalkTrackingService
         Intent(this, WalkTrackingService::class.java).also { intent ->
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+            bindService(intent, serviceConnection, BIND_AUTO_CREATE)
         }
 
         setContent {
@@ -187,12 +208,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hasLocationPermission(): Boolean {
-        return ActivityCompat.checkSelfPermission(
-            this,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-    }
 
     private fun requestLocationPermission() {
         permissionLauncher.launch(
@@ -221,10 +236,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        
+        // Stop network monitoring
+        if (::networkMonitor.isInitialized) {
+            networkMonitor.stopMonitoring()
+        }
+        
+        // Unbind service
         if (isServiceBound) {
             unbindService(serviceConnection)
             isServiceBound = false
         }
+        
+        android.util.Log.d("MainActivity", "MainActivity destroyed, cleanup complete")
     }
 }
 
@@ -268,9 +292,11 @@ fun AuthNavigationWrapper(
             LoginScreen(
                 firebaseService = firebaseService,
                 onLoginSuccess = {
+                    android.util.Log.d("MainActivity", "onLoginSuccess called, setting isAuthenticated=true and navigating")
                     isAuthenticated.value = true
                     kotlinx.coroutines.MainScope().launch {
                         kotlinx.coroutines.delay(200)
+                        android.util.Log.d("MainActivity", "Navigating to 'main'")
                         navController.navigate("main") {
                             popUpTo("login") { inclusive = true }
                             launchSingleTop = true
@@ -282,17 +308,6 @@ fun AuthNavigationWrapper(
                         launchSingleTop = true
                     }
                 },
-                onContinueAsGuest = {
-                    isAuthenticated.value = true
-                    kotlinx.coroutines.MainScope().launch {
-                        kotlinx.coroutines.delay(300)
-                        navController.navigate("main") {
-                            popUpTo("login") { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
-                },
-                onNavigateToVerification = { } // Not used anymore
             )
         }
 
@@ -331,11 +346,8 @@ fun AuthNavigationWrapper(
         }
     }
 }
-sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    object Map : Screen("map", "Map", Icons.Default.LocationOn)
-    object Profile : Screen("profile", "Profile", Icons.Default.Person)
-    object Settings : Screen("settings", "Settings", Icons.Default.Settings)
-}
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -350,17 +362,30 @@ fun MainNavigationScreen(
     val navController = rememberNavController()
     val isDarkTheme = isSystemInDarkTheme()
 
-    // Persistent walk state - service is source of truth
+    // Persistent walk state - service is source of truth, backed up by SharedPreferences
     val activity = context as? MainActivity
-    var walkState by remember { mutableStateOf(LiveWalkState()) }
+    val walkRecoveryManager = remember { com.sidhart.walkover.utils.WalkRecoveryManager(context) }
+    var walkState by remember { mutableStateOf(walkRecoveryManager.getSavedWalkState() ?: LiveWalkState()) }
+
+    // Save state on any changes
+    LaunchedEffect(walkState) {
+        walkRecoveryManager.saveWalkState(walkState)
+    }
 
     // Always read from service as source of truth
     LaunchedEffect(activity?.isServiceBound, activity?.walkTrackingService) {
         val mainActivity = activity
         if (mainActivity?.isServiceBound == true && mainActivity.walkTrackingService != null) {
             val service = mainActivity.walkTrackingService!!
-            // Restore state from service immediately
-            walkState = service.walkState.value
+            val serviceState = service.walkState.value
+            
+            // If the service just started empty but we recovered a walk, push ours upstream!
+            if (!serviceState.isTracking && walkState.isTracking) {
+                service.syncState(walkState)
+            } else {
+                walkState = serviceState
+            }
+
             // Observe future updates from service
             service.walkState.collect { state ->
                 walkState = state
@@ -383,93 +408,93 @@ fun MainNavigationScreen(
         }
     }
 
-    var currentMapStyle by remember {
-        mutableStateOf(
-            if (isDarkTheme) MapStyle.CARTODB_DARK_MATTER
-            else MapStyle.CARTODB_POSITRON
-        )
-    }
-
-    LaunchedEffect(isDarkTheme) {
-        currentMapStyle = if (isDarkTheme) {
-            MapStyle.CARTODB_DARK_MATTER
-        } else {
-            MapStyle.CARTODB_POSITRON
-        }
-    }
+    // Dynamic map style based on system theme
+    val currentMapStyle = if (isDarkTheme) MapStyle.MAPBOX_DARK else MapStyle.MAPBOX_STREETS
 
     Scaffold(
-        bottomBar = {
-            NavigationBar(
-                modifier = Modifier.navigationBarsPadding(),
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp
-            ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-
-                listOf(Screen.Profile, Screen.Map, Screen.Settings).forEach { screen ->
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = screen.icon,
-                                contentDescription = screen.title,
-                                modifier = Modifier.size(if (screen == Screen.Map) 26.dp else 24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = screen.title,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
-            }
-        }
+        containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Map.route,
-            modifier = Modifier.padding(innerPadding)
+            startDestination = "home",
+            modifier = Modifier.padding(top = innerPadding.calculateTopPadding())
         ) {
-            composable(Screen.Map.route) {
+            composable("home") {
                 EnhancedMapScreenContent(
                     currentMapStyle = currentMapStyle,
-                    onMapStyleChange = { newStyle -> currentMapStyle = newStyle },
                     locationService = locationService,
                     firebaseService = firebaseService,
                     context = context,
                     onRequestPermission = onRequestPermission,
                     onEnableLocation = onRequestLocationSettings,
                     persistentWalkState = walkState,
-                    onWalkStateChange = { walkState = it }
+                    onWalkStateChange = { walkState = it },
+                    onNavigateToChallenge = { navController.navigate("friends_list") },
+                    onNavigateToDiscover = { navController.navigate("discover") },
+                    onNavigateToProfile = { navController.navigate("profile") }
+                )
+            }
+            
+            composable("discover") {
+                DiscoverScreen(
+                    firebaseService = firebaseService,
+                    onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToLeaderboard = { navController.navigate("leaderboard") },
+                    onNavigateToFriendsList = { navController.navigate("friends_list") },
+                    onNavigateToSearchFriends = { navController.navigate("search_friends") },
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            
+            composable("profile") {
+                ProfileScreen(
+                    firebaseService = firebaseService,
+                    onNavigateToWalkHistory = { navController.navigate("walk_history") },
+                    onNavigateToDetailedStats = { navController.navigate("detailed_stats") },
+                    onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToFriendsList = { navController.navigate("friends_list") },
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 
-            composable(Screen.Profile.route) {
-                ProfileScreen(
+            composable("detailed_stats") {
+                StatsScreen(
                     firebaseService = firebaseService,
-                    onNavigateToWalkHistory = {
-                        navController.navigate("walk_history")
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+
+            composable("search_friends") {
+                SearchFriendsScreen(
+                    firebaseService = firebaseService,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+
+            composable("friends_list") {
+                FriendsListScreen(
+                    firebaseService = firebaseService,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+
+            composable("leaderboard") {
+                LeaderboardScreen(
+                    firebaseService = firebaseService,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToFriendsList = {
+                        navController.navigate("friends_list")
                     }
                 )
             }
@@ -497,10 +522,13 @@ fun MainNavigationScreen(
                 )
             }
 
-            composable(Screen.Settings.route) {
+            composable("settings") {
                 SettingsScreen(
                     firebaseService = firebaseService,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
                 )
             }
         }
@@ -509,18 +537,47 @@ fun MainNavigationScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EnhancedMapScreenContent(
+ fun EnhancedMapScreenContent(
     currentMapStyle: MapStyle,
-    onMapStyleChange: (MapStyle) -> Unit,
     locationService: LocationService,
     firebaseService: FirebaseService,
     context: Context,
     onRequestPermission: ((Boolean) -> Unit) -> Unit,
     onEnableLocation: () -> Unit,
     persistentWalkState: LiveWalkState,
-    onWalkStateChange: (LiveWalkState) -> Unit
+    onWalkStateChange: (LiveWalkState) -> Unit,
+    onNavigateToChallenge: () -> Unit = {},
+    onNavigateToDiscover: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {}
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
+    val scaffoldState = rememberBottomSheetScaffoldState()
+    val scope = rememberCoroutineScope()
+
+    // Start with sheet fully expanded (so the full sheet is visible on launch)
+    LaunchedEffect(Unit) {
+        scaffoldState.bottomSheetState.expand()
+    }
+    val activity = context as? MainActivity
+
+    val duelViewModel: com.sidhart.walkover.viewmodel.DuelViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val activeDuel by duelViewModel.activeDuel.collectAsState()
+    val hasActiveDuel = activeDuel != null && activeDuel?.status == DuelStatus.ACTIVE.name
+
+    if (activeDuel?.status == DuelStatus.COMPLETED.name) {
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        DuelCompletionDialog(
+            challenge = activeDuel!!,
+            currentUserId = uid,
+            onDismiss = { duelViewModel.clearActiveDuel() }
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        if (uid != null) {
+            duelViewModel.checkActiveDuel(uid)
+        }
+    }
 
     // Permission and location states - checked on map screen only
     var hasLocationPermission by remember {
@@ -535,8 +592,7 @@ fun EnhancedMapScreenContent(
 
     // Use persistent walk state from parent - always sync
     var walkState by remember { mutableStateOf(persistentWalkState) }
-    var showFullScreenStats by remember { mutableStateOf(false) }
-    var currentMapStyleState by remember { mutableStateOf(currentMapStyle) }
+    var selectedMode by remember { mutableStateOf("Ghost") } // Default mode
 
     // Always sync with persistent state from parent
     LaunchedEffect(persistentWalkState) {
@@ -551,7 +607,6 @@ fun EnhancedMapScreenContent(
     }
 
     // Start notification service when tracking starts
-    val activity = context as? MainActivity
     LaunchedEffect(walkState.isTracking) {
         if (walkState.isTracking) {
             // Start service for notifications
@@ -579,9 +634,13 @@ fun EnhancedMapScreenContent(
     var walkPolyline by remember { mutableStateOf<org.osmdroid.views.overlay.Polyline?>(null) }
     var hasInitializedLocation by remember { mutableStateOf(false) }
 
-    val canStartWalk = hasLocationPermission && isLocationEnabled
-    val showLocationWarning = !canStartWalk && !walkState.isTracking
+    // territory overlay state
+    var territories by remember { mutableStateOf<List<Territory>>(emptyList()) }
+    var showTerritories by remember { mutableStateOf(false) } // Default OFF
+    var showCleanupDialog by remember { mutableStateOf(false) }
+    var celebrationEvent by remember { mutableStateOf<CelebrationEvent?>(null) }
 
+    val canStartWalk = hasLocationPermission && isLocationEnabled
     // Monitor permission changes
     LaunchedEffect(Unit) {
         while (true) {
@@ -597,13 +656,48 @@ fun EnhancedMapScreenContent(
         }
     }
 
-    LaunchedEffect(currentMapStyle) {
-        if (currentMapStyleState != currentMapStyle) {
-            currentMapStyleState = currentMapStyle
+
+    // Location tracking - RESTORE DIRECT TRACKING (was working before)
+    // start territory listener when screen shown
+    LaunchedEffect(Unit) {
+        try {
+            firebaseService.observeTerritoriesRealtime()
+                .catch { error ->
+                    android.util.Log.e("MainActivity", "❌ Territory Flow ERROR: ${error.message}", error)
+                }
+                .collect { updated ->
+                    android.util.Log.d("MainActivity", "Territories fetched: ${updated.size}")
+                    territories = updated
+                }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Exception collecting territories: ${e.message}", e)
         }
     }
 
-    // Location tracking - RESTORE DIRECT TRACKING (was working before)
+    // redraw overlays when territories change
+    LaunchedEffect(territories, showTerritories, walkState.isTracking, selectedMode) {
+        mapView?.let { map ->
+            if (showTerritories && territories.isNotEmpty()) {
+                val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                val filtered = if (selectedMode == "Duel") {
+                    // Only show territories for current user and their single duel opponent
+                    val opponentId = activeDuel?.let { duel ->
+                        if (duel.challengerId == currentUserId) duel.opponentId else duel.challengerId
+                    }
+                    territories.filter { t ->
+                        t.ownerId == currentUserId || (opponentId != null && t.ownerId == opponentId)
+                    }
+                } else {
+                    territories // show all for Competitive
+                }
+                drawTerritoriesOnMap(map, filtered)
+            } else {
+                map.overlays.removeAll { it is org.osmdroid.views.overlay.Polygon && it.title?.startsWith("Territory_") == true }
+                map.invalidate()
+            }
+        }
+    }
+
     LaunchedEffect(walkState.isTracking, walkState.isPaused, hasLocationPermission, isLocationEnabled) {
         if (walkState.isTracking && !walkState.isPaused && hasLocationPermission && isLocationEnabled) {
             try {
@@ -613,7 +707,7 @@ fun EnhancedMapScreenContent(
                         val distance = calculateTotalDistance(updatedPoints)
 
                         val newState = walkState.copy(points = updatedPoints)
-                            .updateStats(distance, 0.0, updatedPoints.size)
+                            .updateStats(distance, updatedPoints.size)
 
                         // Update service first (source of truth)
                         activity?.walkTrackingService?.syncState(newState)
@@ -636,12 +730,12 @@ fun EnhancedMapScreenContent(
                             )
                         }
                     }
-                    .catch { error ->
-                        Toast.makeText(context, "Location tracking error", Toast.LENGTH_SHORT).show()
+                    .catch { _ ->
+                        // Error handled silently
                     }
                     .launchIn(this)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Location service error", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                // Error handled silently
             }
         } else if (walkState.isTracking && (!hasLocationPermission || !isLocationEnabled)) {
             val pausedState = walkState.copy(
@@ -650,7 +744,6 @@ fun EnhancedMapScreenContent(
             )
             walkState = pausedState
             onWalkStateChange(pausedState) // Persist to parent
-            Toast.makeText(context, "Tracking paused - location unavailable", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -678,804 +771,335 @@ fun EnhancedMapScreenContent(
                 context = context,
                 onSuccess = { location ->
                     val currentLocation = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
-                    mapView?.controller?.setCenter(currentLocation)
+                    val offsetGeoPoint = try {
+                        val latSpan = mapView!!.boundingBox.latitudeSpan
+                        if (latSpan > 0) {
+                            org.osmdroid.util.GeoPoint(location.latitude - (latSpan * 0.20), location.longitude)
+                        } else {
+                            org.osmdroid.util.GeoPoint(location.latitude - 0.005, location.longitude)
+                        }
+                    } catch (e: Exception) {
+                        org.osmdroid.util.GeoPoint(location.latitude - 0.005, location.longitude)
+                    }
+                    mapView?.controller?.setCenter(offsetGeoPoint)
 
                     MapUtils.addModernMarker(
                         mapView = mapView!!,
                         geoPoint = currentLocation,
                         title = "Current Location",
-                        snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}",
+                        snippet = "Lat: ${String.format(Locale.US, "%.6f", location.latitude)}, Lng: ${String.format(Locale.US, "%.6f", location.longitude)}",
                         isLocationMarker = true,
-                        isActiveTracking = false
                     )
 
                     hasInitializedLocation = true
-                    Toast.makeText(context, "Location found!", Toast.LENGTH_SHORT).show()
                 },
-                onFailure = { }
+                onFailure = { _ -> }
             )
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Map View
-        AndroidView(
-            factory = { ctx ->
-                org.osmdroid.views.MapView(ctx).apply {
-                    try {
-                        setTileSource(currentMapStyle.tileSource)
-                        setMultiTouchControls(true)
-                        setBuiltInZoomControls(false)
-                        setClickable(true)
-                        controller.setZoom(15.0)
-                        minZoomLevel = 3.0
-                        maxZoomLevel = 18.0
-
-                        val defaultCenter = org.osmdroid.util.GeoPoint(24.8607, 67.0011)
-                        controller.setCenter(defaultCenter)
-                        mapView = this
-                    } catch (e: Exception) {
-                        android.util.Log.e("MapView", "Error initializing map", e)
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-            update = { mv ->
-                try {
-                    val currentTileSource = mv.tileProvider.tileSource
-                    val newTileSource = currentMapStyleState.tileSource
-
-                    if (currentTileSource.name() != newTileSource.name()) {
-                        val currentCenter = mv.mapCenter
-                        val currentZoom = mv.zoomLevelDouble
-
-                        mv.tileProvider.clearTileCache()
-                        mv.setTileSource(newTileSource)
-                        mv.controller.setCenter(currentCenter)
-                        mv.controller.setZoom(currentZoom)
-                        mv.invalidate()
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("MapView", "Error updating map style", e)
-                }
-            }
-        )
-
-        // Location Warning Banner
-        AnimatedVisibility(
-            visible = showLocationWarning,
-            enter = slideInVertically() + fadeIn(),
-            exit = slideOutVertically() + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 16.dp)
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth(0.95f)
-                    .clickable {
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
+        // Peeked state: just the drag handle row visible, enough to swipe up
+        sheetPeekHeight = 80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+        sheetContainerColor = Color.Transparent,
+        sheetShadowElevation = 0.dp,
+        sheetTonalElevation = 0.dp,
+        sheetDragHandle = null,
+        sheetContent = {
+            MapScreenBottomSheet(
+                walkState = walkState,
+                selectedMode = selectedMode,
+                hasActiveDuel = hasActiveDuel,
+                onModeSelect = { selectedMode = it },
+                onStartWalk = {
+                    if (selectedMode == "Duel" && !hasActiveDuel) {
+                        onNavigateToChallenge()
+                    } else if (!canStartWalk) {
                         if (!hasLocationPermission) {
                             onRequestPermission { granted ->
-                                if (granted && !isLocationEnabled) {
-                                    onEnableLocation()
-                                }
+                                if (granted && !isLocationEnabled) onEnableLocation()
                             }
                         } else if (!isLocationEnabled) {
                             onEnableLocation()
                         }
-                    },
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.errorContainer,
-                tonalElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (!hasLocationPermission) "Location Required"
-                            else "GPS Disabled",
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                    } else {
+                        val newState = LiveWalkState(
+                            isTracking = true,
+                            isPaused = false,
+                            mode = selectedMode,
+                            startTime = System.currentTimeMillis()
                         )
-                        Text(
-                            text = if (!hasLocationPermission) "Tap to grant permission"
-                            else "Tap to enable GPS",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        )
+                        activity?.walkTrackingService?.syncState(newState)
+                        walkState = newState
+                        onWalkStateChange(newState)
+                        mapView?.let { map ->
+                            currentLocationMarker?.let { map.overlays.remove(it) }
+                            walkPolyline?.let { map.overlays.remove(it) }
+                            currentLocationMarker = null
+                            walkPolyline = null
+                            map.invalidate()
+                        }
                     }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
+                },
+                onPauseResume = {
+                    val newState = if (walkState.isPaused) {
+                        val pauseDuration = System.currentTimeMillis() - walkState.pauseStartTime
+                        walkState.copy(isPaused = false, totalPausedTime = walkState.totalPausedTime + pauseDuration)
+                    } else {
+                        walkState.copy(isPaused = true, pauseStartTime = System.currentTimeMillis())
+                    }
+                    activity?.walkTrackingService?.syncState(newState)
+                    walkState = newState
+                    onWalkStateChange(newState)
+                },
+                onStop = {
+                    val finalState = walkState
+                    context.startService(Intent(context, WalkTrackingService::class.java).apply {
+                        action = WalkTrackingService.ACTION_STOP_TRACKING
+                    })
+                    walkState = walkState.copy(isTracking = false, isPaused = false)
+                    onWalkStateChange(walkState)
+                    if (finalState.stats.distanceKm >= 0.05) {
+                        (context as ComponentActivity).lifecycleScope.launch {
+                            saveEnhancedWalk(
+                                walkState = finalState,
+                                firebaseService = firebaseService,
+                                context = context,
+                                onCelebration = { event -> celebrationEvent = event }
+                            )
+                        }
+                    } else {
+                        Toast.makeText(context, "Walk too short", Toast.LENGTH_SHORT).show()
+                    }
+                    // Clear ALL walk overlays from the map
+                    mapView?.let { map ->
+                        map.overlays.removeAll { overlay ->
+                            overlay is org.osmdroid.views.overlay.Marker ||
+                            overlay is org.osmdroid.views.overlay.Polyline
+                        }
+                        currentLocationMarker = null
+                        walkPolyline = null
+                        map.invalidate()
+                    }
+                },
+                scaffoldState = scaffoldState,
+            )
         }
+    ) { padding ->
+        // Calculate dynamic height of the bottom sheet to keep FABs above it
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val sheetOffset = try { scaffoldState.bottomSheetState.requireOffset() } catch (_: Exception) { 0f }
+        
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val constraints = this
+            val sheetHeight = with(density) { 
+                (constraints.maxHeight.toPx() - sheetOffset).toDp() 
+            }.coerceAtLeast(0.dp)
+            
+            // The padding should be at least the peek height (nav bar aware) or the actual sheet height
+            val fabBottomPadding = (sheetHeight + 16.dp).coerceAtLeast(padding.calculateBottomPadding() + 8.dp)
 
-        // Compact Tracking Stats
-        AnimatedVisibility(
-            visible = walkState.isTracking,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 16.dp)
-        ) {
-            Surface(
-                modifier = Modifier.clickable { showFullScreenStats = true },
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                tonalElevation = 4.dp,
-                shadowElevation = 8.dp
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Map View
+                AndroidView(
+                    factory = { ctx ->
+                        org.osmdroid.views.MapView(ctx).apply {
+                            setTileSource(currentMapStyle.tileSource)
+                            setMultiTouchControls(true)
+                            controller.setZoom(15.0)
+                            val defaultCenter = org.osmdroid.util.GeoPoint(24.8607, 67.0011)
+                            controller.setCenter(defaultCenter)
+                            mapView = this
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                val showLocationWarning = !hasLocationPermission || !isLocationEnabled
+
+                // Top Navigation Buttons (Snapchat style, above the map)
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .padding(top = 40.dp, start = 16.dp, end = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (!walkState.isPaused) {
-                        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                        val alpha by infiniteTransition.animateFloat(
-                            initialValue = 1f,
-                            targetValue = 0.3f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1000),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "alpha"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.error.copy(alpha = alpha),
-                                    CircleShape
-                                )
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Pause,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    // Profile Button
+                    FloatingActionButton(
+                        onClick = onNavigateToProfile,
+                        modifier = Modifier.size(48.dp),
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = Color(0xFF007AFF),
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(2.dp)
                     ) {
-                        Text(
-                            text = String.format("%.2f", walkState.stats.distanceKm),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                        Text(
-                            text = "km",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
+                        Icon(imageVector = Icons.Default.Person, contentDescription = "Profile")
                     }
 
-                    Box(
+                    // Location Warning Banner
+                    AnimatedVisibility(
+                        visible = showLocationWarning,
                         modifier = Modifier
-                            .height(20.dp)
-                            .width(1.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                    )
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            .weight(1f)
+                            .padding(horizontal = 12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Schedule,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = walkState.stats.formatElapsedTime(),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.clickable { 
+                                if (!hasLocationPermission) {
+                                    onRequestPermission { granted ->
+                                        if (granted && !isLocationEnabled) onEnableLocation()
+                                    }
+                                } else {
+                                    onEnableLocation()
+                                }
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 12.dp), 
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (!hasLocationPermission) "Location required" else "GPS disabled", 
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
 
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
-                        contentDescription = "View Details",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    // Discover Button
+                    FloatingActionButton(
+                        onClick = onNavigateToDiscover,
+                        modifier = Modifier.size(48.dp),
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = Color(0xFF007AFF),
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Public, contentDescription = "Discover")
+                    }
                 }
-            }
-        }
 
-        // Bottom Right FABs
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AnimatedVisibility(
-                visible = !walkState.isTracking,
-                enter = scaleIn() + fadeIn(),
-                exit = scaleOut() + fadeOut()
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        if (!canStartWalk) {
-                            Toast.makeText(
-                                context,
-                                "Please enable location to use this feature",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } else {
+                // Map UI Controls (Right side buttons - always above the bottom sheet)
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = fabBottomPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Territory toggle — only shown when walk is active AND mode is Duel or Competitive
+                    if (walkState.isTracking && (selectedMode == "Duel" || selectedMode == "Competitive")) {
+                        FloatingActionButton(
+                            onClick = { showTerritories = !showTerritories },
+                            containerColor = if (showTerritories) Color(0xFF007AFF) else MaterialTheme.colorScheme.surface,
+                            contentColor = if (showTerritories) Color.White else Color(0xFF007AFF),
+                            modifier = Modifier.size(44.dp),
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Default.Map, null, modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // My Location FAB — always shown
+                    FloatingActionButton(
+                        onClick = {
                             mapView?.let { map ->
                                 MapUtils.getCurrentLocation(
                                     context = context,
                                     onSuccess = { location ->
-                                        val geoPoint = MapUtils.convertLocationToGeoPoint(location)
-                                        MapUtils.centerMapOnLocation(map, geoPoint)
-                                        Toast.makeText(context, "Centered on location", Toast.LENGTH_SHORT).show()
+                                        val geoPoint = org.osmdroid.util.GeoPoint(location.latitude, location.longitude)
+                                        val offsetGeoPoint = try {
+                                            val latSpan = map.boundingBox.latitudeSpan
+                                            org.osmdroid.util.GeoPoint(location.latitude - (latSpan * 0.25), location.longitude)
+                                        } catch (e: Exception) {
+                                            geoPoint
+                                        }
+                                        map.controller.animateTo(offsetGeoPoint)
                                     },
-                                    onFailure = { error ->
-                                        Toast.makeText(context, "Failed to get location", Toast.LENGTH_SHORT).show()
-                                    }
+                                    onFailure = { _ -> }
                                 )
-                            }
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp),
-                    elevation = FloatingActionButtonDefaults.elevation(
-                        defaultElevation = 6.dp,
-                        pressedElevation = 10.dp
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MyLocation,
-                        contentDescription = "My Location",
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-
-            // Start Walk Button - DISABLED if no location
-            AnimatedVisibility(
-                visible = !walkState.isTracking,
-                enter = scaleIn() + fadeIn(),
-                exit = scaleOut() + fadeOut()
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        if (!canStartWalk) {
-                            if (!hasLocationPermission) {
-                                Toast.makeText(context, "Location permission required", Toast.LENGTH_SHORT).show()
-                                onRequestPermission { granted ->
-                                    if (granted && !isLocationEnabled) {
-                                        onEnableLocation()
-                                    }
-                                }
-                            } else if (!isLocationEnabled) {
-                                Toast.makeText(context, "Please enable GPS to start tracking", Toast.LENGTH_SHORT).show()
-                                onEnableLocation()
-                            }
-                        } else {
-                            // Start tracking - update service first (source of truth)
-                            val newState = LiveWalkState(
-                                isTracking = true,
-                                isPaused = false,
-                                startTime = System.currentTimeMillis(),
-                                points = emptyList()
-                            )
-
-                            // Update service first
-                            activity?.walkTrackingService?.syncState(newState)
-
-                            // Then update local and parent
-                            walkState = newState
-                            onWalkStateChange(newState)
-
-                            mapView?.let { map ->
-                                currentLocationMarker?.let { map.overlays.remove(it) }
-                                walkPolyline?.let { map.overlays.remove(it) }
-                                currentLocationMarker = null
-                                walkPolyline = null
-                                map.invalidate()
-                            }
-                        }
-                    },
-                    containerColor = if (canStartWalk)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (canStartWalk)
-                        MaterialTheme.colorScheme.onPrimary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(56.dp),
-                    elevation = FloatingActionButtonDefaults.elevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 12.dp
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Start Walk",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-        }
-
-        // Bottom Control Bar (when tracking)
-        AnimatedVisibility(
-            visible = walkState.isTracking,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 24.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                shadowElevation = 12.dp,
-                tonalElevation = 4.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FloatingActionButton(
-                        onClick = {
-                            val newState = if (walkState.isPaused) {
-                                val pauseDuration = System.currentTimeMillis() - walkState.pauseStartTime
-                                walkState.copy(
-                                    isPaused = false,
-                                    totalPausedTime = walkState.totalPausedTime + pauseDuration
-                                )
-                            } else {
-                                walkState.copy(
-                                    isPaused = true,
-                                    pauseStartTime = System.currentTimeMillis()
-                                )
-                            }
-                            // Update service first (source of truth)
-                            activity?.walkTrackingService?.syncState(newState)
-                            walkState = newState
-                            onWalkStateChange(newState)
-                        },
-                        modifier = Modifier.size(56.dp),
-                        containerColor = if (walkState.isPaused)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = if (walkState.isPaused)
-                            MaterialTheme.colorScheme.onPrimary
-                        else
-                            MaterialTheme.colorScheme.onSecondaryContainer,
-                        elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 4.dp,
-                            pressedElevation = 8.dp
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (walkState.isPaused)
-                                Icons.Default.PlayArrow
-                            else
-                                Icons.Default.Pause,
-                            contentDescription = if (walkState.isPaused) "Resume" else "Pause",
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-
-                    FloatingActionButton(
-                        onClick = {
-                            // Stop tracking
-                            val finalState = walkState
-                            val stoppedState = walkState.copy(isTracking = false, isPaused = false)
-
-                            // Stop service first
-                            val stopIntent = Intent(context, WalkTrackingService::class.java).apply {
-                                action = WalkTrackingService.ACTION_STOP_TRACKING
-                            }
-                            context.startService(stopIntent)
-
-                            // Then update local state
-                            walkState = stoppedState
-                            onWalkStateChange(stoppedState)
-
-                            // MINIMUM 50m (0.05km) TO SAVE
-                            if (finalState.stats.distanceKm >= 0.05) {
-                                (context as ComponentActivity).lifecycleScope.launch {
-                                    saveEnhancedWalk(finalState, firebaseService, context)
-                                }
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Walk too short (minimum 50m required)",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-
-                            mapView?.let { map ->
-                                currentLocationMarker?.let { map.overlays.remove(it) }
-                                walkPolyline?.let { map.overlays.remove(it) }
-                                currentLocationMarker = null
-                                walkPolyline = null
-                                map.invalidate()
                             }
                         },
-                        modifier = Modifier.size(56.dp),
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                        elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 4.dp,
-                            pressedElevation = 8.dp
-                        )
+                        containerColor = if (isSystemInDarkTheme()) Color(0xFF1C2A3A) else Color.White,
+                        contentColor = Color(0xFF007AFF),
+                        modifier = Modifier.size(44.dp),
+                        shape = CircleShape
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = "Stop Walk",
-                            modifier = Modifier.size(26.dp)
-                        )
+                        Icon(Icons.Default.MyLocation, null, modifier = Modifier.size(20.dp))
                     }
                 }
+            
             }
         }
-
-        if (showFullScreenStats) {
-            FullScreenStatsView(
-                walkState = walkState,
-                onClose = { showFullScreenStats = false }
-            )
-        }
     }
-}
 
-@Composable
-fun CompactStatusIndicator(
-    walkState: LiveWalkState,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = modifier.shadow(4.dp, RoundedCornerShape(24.dp)),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
-        ),
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (walkState.isPaused)
-                            MaterialTheme.colorScheme.tertiary
-                        else
-                            MaterialTheme.colorScheme.primary
-                    )
-            )
-
-            Text(
-                text = walkState.stats.formatElapsedTime(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                text = String.format("%.2f km", walkState.stats.distanceKm),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowUp,
-                contentDescription = "View details",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun DetailedStatsSheet(
-    walkState: LiveWalkState,
-    onClose: () -> Unit
-) {
-    val stats = walkState.stats
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 32.dp)
-    ) {
-        Spacer(modifier = Modifier.height(24.dp))
-
-        StatCard(
-            title = "Time",
-            icon = Icons.Default.DateRange
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Total",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stats.formatElapsedTime(),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                if (stats.pausedTimeMillis > 0) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "Active",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = stats.formatActiveTime(),
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+    // ── Merge territories confirmation dialog ─────────────────────
+    if (showCleanupDialog) {
+        AlertDialog(
+            onDismissRequest = { showCleanupDialog = false },
+            icon = { Text("🧹", fontSize = 28.sp) },
+            title = { Text("Merge My Territories", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Scans all your territories in Firestore, merges overlapping or " +
+                    "adjacent ones (within 80 m) into unified polygons, and removes " +
+                    "old fragmented documents.\n\nRun once to fix historical data."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showCleanupDialog = false
+                    scope.launch {
+                        firebaseService.cleanupAllConflicts().fold(
+                            onSuccess = { (merged, resolved) ->
+                                val msg = when {
+                                    merged == 0 && resolved == 0 -> "✅ All territories are clean!"
+                                    merged > 0 && resolved > 0  -> "✅ Merged $merged + resolved $resolved conflict(s)."
+                                    merged > 0                  -> "✅ Merged $merged own territory docs."
+                                    else                        -> "✅ Resolved $resolved cross-user conflict(s)."
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            },
+                            onFailure = { err ->
+                                Toast.makeText(context, "❌ Cleanup failed: ${err.message}", Toast.LENGTH_LONG).show()
+                            }
                         )
                     }
-                }
+                }) { Text("Merge Now") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCleanupDialog = false }) { Text("Cancel") }
             }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            StatCard(
-                title = "Distance",
-                icon = Icons.Default.LocationOn,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = String.format("%.2f", stats.distanceKm),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "km",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            StatCard(
-                title = "Avg Speed",
-                icon = Icons.Default.Star,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = String.format("%.1f", stats.averageSpeedKmh),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "km/h",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            StatCard(
-                title = "Calories",
-                icon = Icons.Default.FavoriteBorder,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = String.format("%.0f", stats.caloriesBurned),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "kcal",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            StatCard(
-                title = "Points",
-                icon = Icons.Default.Check,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = stats.points.toString(),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "tracked",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                InfoItem(
-                    label = "Status",
-                    value = if (walkState.isPaused) "Paused" else "Active",
-                    valueColor = if (walkState.isPaused)
-                        MaterialTheme.colorScheme.tertiary
-                    else
-                        MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun FullScreenStatsView(
-    walkState: LiveWalkState,
-    onClose: () -> Unit
-) {
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Walk Statistics",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 24.dp)
-        ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            DetailedStatsSheet(
-                walkState = walkState,
-                onClose = onClose
-            )
-        }
-    }
-}
-
-@Composable
-fun StatCard(
-    title: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = title,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun InfoItem(
-    label: String,
-    value: String,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Column {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = valueColor
-        )
+    }
+
+    // ── Celebration overlay (Dialog = own window, always on top) ──
+    val currentCelebration = celebrationEvent
+    if (currentCelebration != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { celebrationEvent = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            )
+        ) {
+            TerritoryCaptureCelebration(
+                event     = currentCelebration,
+                onDismiss = { celebrationEvent = null }
+            )
+        }
     }
 }
 
@@ -1497,12 +1121,11 @@ private fun updateMapVisuals(
             title = "Current Location",
             snippet = "Tracking...",
             isLocationMarker = true,
-            isActiveTracking = true
         )
         onMarkerUpdate(newMarker)
     } else {
         currentMarker.position = geoPoint
-        currentMarker.snippet = "Lat: ${String.format("%.6f", location.latitude)}, Lng: ${String.format("%.6f", location.longitude)}"
+        currentMarker.snippet = "Lat: ${String.format(Locale.US, "%.6f", location.latitude)}, Lng: ${String.format(Locale.US, "%.6f", location.longitude)}"
     }
 
     if (points.size >= 2) {
@@ -1522,7 +1145,42 @@ private fun updateMapVisuals(
         onPolylineUpdate(newPolyline)
     }
 
-    map.controller.animateTo(geoPoint)
+    val offsetGeoPoint = try {
+        val latSpan = map.boundingBox.latitudeSpan
+        org.osmdroid.util.GeoPoint(location.latitude - (latSpan * 0.25), location.longitude)
+    } catch (e: Exception) {
+        geoPoint
+    }
+    map.controller.animateTo(offsetGeoPoint)
+    map.invalidate()
+}
+
+// --- territory drawing helper ---
+private fun drawTerritoriesOnMap(
+    map: org.osmdroid.views.MapView,
+    territories: List<Territory>
+) {
+    map.overlays.removeAll { it is org.osmdroid.views.overlay.Polygon && it.title?.startsWith("Territory_") == true }
+    territories.forEach { territory ->
+        if (territory.polygon.size >= 3) {
+            val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            val isMine = territory.ownerId == currentUserId
+            val fillColor = if (isMine) "#4400B4FF".toColorInt()
+                else "#44FF3B30".toColorInt()
+            val borderColor = if (isMine) "#FF00B4FF".toColorInt()
+                else "#FFFF3B30".toColorInt()
+            val poly = org.osmdroid.views.overlay.Polygon().apply {
+                title = "Territory_${territory.id}"
+                points = territory.polygon.map { org.osmdroid.util.GeoPoint(it.latitude, it.longitude) } +
+                         listOf(org.osmdroid.util.GeoPoint(territory.polygon.first().latitude, territory.polygon.first().longitude))
+                fillPaint.color = fillColor
+                outlinePaint.color = borderColor
+                outlinePaint.strokeWidth = if (isMine) 3f else 2f
+                isVisible = true
+            }
+            map.overlays.add(poly)
+        }
+    }
     map.invalidate()
 }
 
@@ -1539,24 +1197,142 @@ private fun calculateTotalDistance(points: List<LocationPoint>): Double {
 private suspend fun saveEnhancedWalk(
     walkState: LiveWalkState,
     firebaseService: FirebaseService,
-    context: Context
+    context: Context,
+    onCelebration: ((CelebrationEvent) -> Unit)? = null
 ) {
     try {
+        val finalMode = when (walkState.mode) {
+            "Competitive" -> WalkMode.COMPETE.name
+            "Duel" -> WalkMode.DUEL.name
+            "Ghost" -> WalkMode.GHOST.name
+            else -> WalkMode.ROAM.name
+        }
+        var polygonArea = 0.0
+        var capturedPoly = emptyList<com.google.firebase.firestore.GeoPoint>()
+        
+        if (walkState.mode == "Competitive") {
+            val osmdroidPoints = walkState.points.map { org.osmdroid.util.GeoPoint(it.latitude, it.longitude) }
+
+            // Always compute a convex hull from ALL walk points — no closed-loop required.
+            // This is the territory you "walked around", regardless of whether you returned to start.
+            if (osmdroidPoints.size >= 3) {
+                val hull = com.sidhart.walkover.utils.ConvexHull.compute(osmdroidPoints)
+                if (hull.size >= 3) {
+                    polygonArea = MapUtils.calculatePolygonArea(hull)
+                    capturedPoly = hull.map { com.google.firebase.firestore.GeoPoint(it.latitude, it.longitude) }
+                    android.util.Log.d("MainActivity",
+                        "🏙️ Competitive hull: ${hull.size} pts, area=${polygonArea.toInt()} m²")
+                }
+            }
+        }
+
+        // ── ANTI-CHEAT ENGINE ──
+        var antiCheatStatus = "VALID"
+        val averageSpeedKmh = walkState.stats.averageSpeedKmh
+        
+        // 1. Average Speed Check (Cap at 15 km/h)
+        if (averageSpeedKmh > 15.0) {
+            antiCheatStatus = "REJECTED_SPEED"
+        } else if (walkState.points.size >= 2) {
+            // 2. High-Speed Segment Spikes (The "Highway" Rule)
+            var highSpeedSegmentsCount = 0
+            val totalSegments = walkState.points.size - 1
+            
+            for (i in 1 until walkState.points.size) {
+                val p1 = walkState.points[i-1]
+                val p2 = walkState.points[i]
+                val distMeters = LocationService.calculateDistance(p1, p2)
+                val timeDiffMillis = p2.timestamp - p1.timestamp
+                
+                if (timeDiffMillis > 0) {
+                    val speedKmh = (distMeters / (timeDiffMillis / 1000.0)) * 3.6
+                    if (speedKmh > 30.0) {
+                        highSpeedSegmentsCount++
+                    }
+                }
+            }
+            
+            // If more than 5% of segments are over 30km/h
+            if (totalSegments > 0 && (highSpeedSegmentsCount.toDouble() / totalSegments) > 0.05) {
+                antiCheatStatus = "REJECTED_SPEED"
+            }
+        }
+        
+        // 3. Minimum Duration & Distance Rule
+        val durationMins = walkState.stats.elapsedTimeMillis / 60000.0
+        val distanceMeters = walkState.stats.distanceMeters
+        if (durationMins < 2.0 || distanceMeters < 50.0) {
+            antiCheatStatus = "REJECTED_DISTANCE"
+        }
+
         val walk = Walk(
             polylineCoordinates = walkState.points.map {
                 com.google.firebase.firestore.GeoPoint(it.latitude, it.longitude)
             },
             distanceCovered = walkState.stats.distanceMeters,
-            duration = walkState.stats.elapsedTimeMillis
+            duration = walkState.stats.elapsedTimeMillis,
+            mode = finalMode,
+            capturedPolygon = capturedPoly,
+            capturedAreaM2 = polygonArea,
+            status = antiCheatStatus
         )
 
         val result = firebaseService.saveWalk(walk)
 
         result.fold(
             onSuccess = { walkId ->
+                if (walk.status == "VALID") {
+                    // Update challenge progress after saving walk
+                    firebaseService.updateChallengesAfterWalk(walk)
+
+                    if (walkState.mode == "Competitive") {
+                        // ── Territory save (always attempted for competitive) ──
+                        val hullPoints = capturedPoly.map {
+                            org.osmdroid.util.GeoPoint(it.latitude, it.longitude)
+                        }
+                        if (hullPoints.size >= 3) {
+                            firebaseService.resolveConflictsAndSave(
+                                newHullPoints = hullPoints,
+                                sourceWalkId  = walkId,
+                            ).onFailure { err ->
+                                android.util.Log.e("MainActivity",
+                                    "❌ Territory save failed: ${err.message}", err)
+                            }
+                        }
+
+                        // ── Auto-cleanup: ALWAYS resolve cross-user overlaps ──
+                        // Runs regardless of territory save result
+                        try {
+                            firebaseService.cleanupAllConflicts()
+                        } catch (e: Exception) {
+                            android.util.Log.w("MainActivity", "Cleanup warning: ${e.message}")
+                        }
+
+                        // ── Celebrate competitive walk ────────────────────────
+                        onCelebration?.invoke(
+                            CelebrationEvent(
+                                areaM2     = polygonArea,
+                                distanceKm = walkState.stats.distanceKm,
+                                isRoam     = false
+                            )
+                        )
+                    } else {
+                        // ── Roam walk celebration ─────────────────────────────
+                        onCelebration?.invoke(
+                            CelebrationEvent(
+                                areaM2     = 0.0,
+                                distanceKm = walkState.stats.distanceKm,
+                                isRoam     = true
+                            )
+                        )
+                    }
+                } else {
+                    Toast.makeText(context, "Walk rejected by Anti-Cheat: ${walk.status}", Toast.LENGTH_LONG).show()
+                }
+
                 Toast.makeText(
                     context,
-                    "Walk saved successfully! (${String.format("%.2f", walkState.stats.distanceKm)} km)",
+                    "Walk saved! (${String.format(Locale.US, "%.2f", walkState.stats.distanceKm)} km)",
                     Toast.LENGTH_LONG
                 ).show()
                 android.util.Log.d("MainActivity", "Walk saved with ID: $walkId, Distance: ${walkState.stats.distanceKm} km")
@@ -1579,3 +1355,4 @@ private suspend fun saveEnhancedWalk(
         android.util.Log.e("MainActivity", "Exception while saving walk", e)
     }
 }
+

@@ -12,6 +12,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.DirectionsWalk
+import com.sidhart.walkover.ui.theme.NeonGreen
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -68,7 +71,6 @@ fun WalkHistoryScreen(
                 onFailure = { error ->
                     isLoading = false
                     isRefreshing = false
-                    Toast.makeText(context, "Failed to load walks: ${error.message}", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -92,6 +94,7 @@ fun WalkHistoryScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .navigationBarsPadding()
     ) {
         // Header
         Surface(
@@ -106,19 +109,13 @@ fun WalkHistoryScreen(
             ) {
                 IconButton(onClick = onNavigateBack) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Outlined.History,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                // Removed history icon 
                 Text(
                     text = "Walk History",
                     fontSize = 24.sp,
@@ -135,7 +132,7 @@ fun WalkHistoryScreen(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterType.values().forEach { filter ->
+            FilterType.entries.forEach { filter ->
                 FilterChip(
                     selected = filterType == filter,
                     onClick = { filterType = filter },
@@ -186,14 +183,14 @@ fun WalkHistoryScreen(
                     StatsSummaryItem(
                         label = "Total Walks",
                         value = filteredWalks.size.toString(),
-                        icon = Icons.Outlined.DirectionsWalk,
-                        color = Color(0xFF4CAF50)
+                        icon = Icons.AutoMirrored.Outlined.DirectionsWalk,
+                        color = NeonGreen
                     )
                     StatsSummaryItem(
                         label = "Distance",
                         value = "${decimalFormat.format(filteredWalks.sumOf { it.distanceCovered } / 1000)} km",
                         icon = Icons.Outlined.Route,
-                        color = Color(0xFF2196F3)
+                        color = NeonGreen
                     )
                 }
             }
@@ -261,7 +258,7 @@ fun WalkHistoryScreen(
                             showDeleteDialog = null
                         },
                         onFailure = { error ->
-                            Toast.makeText(context, "Failed to delete: ${error.message}", Toast.LENGTH_SHORT).show()
+                            // Error handled silently
                         }
                     )
                 }
@@ -317,13 +314,13 @@ fun WalkHistoryItem(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.DirectionsWalk,
+                        imageVector = Icons.AutoMirrored.Outlined.DirectionsWalk,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -332,12 +329,32 @@ fun WalkHistoryItem(
 
                 // Walk Info
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = dateFormat.format(walk.timestamp),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = dateFormat.format(walk.timestamp),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (walk.status != "VALID") {
+                            Spacer(Modifier.width(8.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = if (walk.status == "REJECTED_SPEED") "TOO FAST" else "REJECTED",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -408,19 +425,20 @@ fun WalkHistoryItem(
                             icon = Icons.Outlined.Timer,
                             label = "Duration",
                             value = duration,
-                            color = Color(0xFF4CAF50)
+                            // time icon should be black
+                            color = Color.Black
                         )
                         WalkDetailStatItem(
                             icon = Icons.Outlined.LocationOn,
                             label = "Points",
                             value = walk.polylineCoordinates.size.toString(),
-                            color = Color(0xFFFF9800)
+                            color = MaterialTheme.colorScheme.secondary
                         )
                         WalkDetailStatItem(
                             icon = Icons.Outlined.Speed,
                             label = "Avg Speed",
                             value = calculateAvgSpeed(walk),
-                            color = Color(0xFF2196F3)
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
 
@@ -437,10 +455,9 @@ fun WalkHistoryItem(
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.error
                             ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                                 brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.error)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
+                            ),                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Delete,
@@ -565,7 +582,7 @@ fun EmptyState(filterType: FilterType) {
             modifier = Modifier.padding(32.dp)
         ) {
             Icon(
-                imageVector = Icons.Outlined.DirectionsWalk,
+                imageVector = Icons.AutoMirrored.Outlined.DirectionsWalk,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(80.dp)
@@ -687,11 +704,11 @@ fun formatDuration(milliseconds: Long): String {
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
 
-    return when {
-        hours > 0 -> String.format("%dh %dm", hours, minutes)
-        minutes > 0 -> String.format("%dm %ds", minutes, seconds)
-        else -> String.format("%ds", seconds)
-    }
+       return when {
+           hours > 0 -> String.format(Locale.US, "%dh %dm", hours, minutes)
+           minutes > 0 -> String.format(Locale.US, "%dm %ds", minutes, seconds)
+           else -> String.format(Locale.US, "%ds", seconds)
+       }
 }
 
 fun calculateAvgSpeed(walk: Walk): String {
@@ -700,7 +717,7 @@ fun calculateAvgSpeed(walk: Walk): String {
     val speedMps = walk.distanceCovered / (walk.duration / 1000.0)
     val speedKmh = speedMps * 3.6
 
-    return String.format("%.1f km/h", speedKmh)
+    return String.format(Locale.US, "%.1f km/h", speedKmh)
 }
 
 fun filterWalksByDate(walks: List<Walk>, daysAgo: Int): List<Walk> {

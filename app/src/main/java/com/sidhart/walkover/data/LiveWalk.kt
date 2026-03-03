@@ -6,6 +6,7 @@ package com.sidhart.walkover.data
 data class LiveWalkState(
     val isTracking: Boolean = false,
     val isPaused: Boolean = false,
+    val mode: String = "Ghost", // "Ghost" or "Compete"
     val startTime: Long = 0L,
     val pauseStartTime: Long = 0L,
     val totalPausedTime: Long = 0L,
@@ -15,7 +16,7 @@ data class LiveWalkState(
     /**
      * Updates the walk statistics (without area calculation)
      */
-    fun updateStats(distance: Double, area: Double, pointCount: Int): LiveWalkState {
+    fun updateStats(distance: Double, pointCount: Int): LiveWalkState {
         val elapsedTime = if (isTracking) {
             System.currentTimeMillis() - startTime - totalPausedTime
         } else {
@@ -71,16 +72,6 @@ data class WalkStats(
         val seconds = (elapsedTimeMillis / 1000) % 60
         val minutes = (elapsedTimeMillis / 60000) % 60
         val hours = elapsedTimeMillis / 3600000
-        return String.format("%02d:%02d:%02d", hours, minutes, seconds)
-    }
-
-    /**
-     * Format active time (excluding pauses)
-     */
-    fun formatActiveTime(): String {
-        val seconds = (activeTimeMillis / 1000) % 60
-        val minutes = (activeTimeMillis / 60000) % 60
-        val hours = activeTimeMillis / 3600000
         return String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 }

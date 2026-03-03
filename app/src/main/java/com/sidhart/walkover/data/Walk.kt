@@ -16,5 +16,18 @@ data class Walk(
     val polylineCoordinates: List<GeoPoint> = emptyList(),
     val distanceCovered: Double = 0.0, // in meters
     val timestamp: Date = Date(),
-    val duration: Long = 0L // in milliseconds
+    val duration: Long = 0L, // in milliseconds
+
+    // Walk mode — ROAM or COMPETE
+    val mode: String = WalkMode.ROAM.name,
+
+    // For COMPETE mode: the closed polygon that forms the captured territory.
+    // This is a simplified polygon (convex hull or the walked path closed back to start).
+    val capturedPolygon: List<GeoPoint> = emptyList(),
+
+    // Area of captured polygon in square meters (0 for ROAM walks)
+    val capturedAreaM2: Double = 0.0,
+
+    // Anti-cheat status: "VALID", "REJECTED_SPEED", "REJECTED_DISTANCE", etc.
+    val status: String = "VALID"
 )

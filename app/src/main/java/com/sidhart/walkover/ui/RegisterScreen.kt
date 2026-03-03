@@ -1,6 +1,7 @@
 package com.sidhart.walkover.ui
 
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,17 +14,24 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import com.sidhart.walkover.ui.theme.NeonGreen
+import com.sidhart.walkover.ui.theme.DeepMidnight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sidhart.walkover.R
 import com.sidhart.walkover.service.FirebaseService
 import kotlinx.coroutines.launch
 
@@ -61,21 +69,29 @@ fun RegisterScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Outlined.DirectionsWalk,
-                contentDescription = "WalkOver",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(64.dp)
-            )
+            // ── Brand Header ──────────────────────────────────
+            val iconDrawable = remember { 
+                ContextCompat.getDrawable(context, R.mipmap.ic_launcher) 
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            if (iconDrawable != null) {
+                Image(
+                    bitmap = iconDrawable.toBitmap().asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Join WalkOver",
-                fontSize = 42.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.5.sp
+                text = "WalkOver",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Black,
+                color = NeonGreen,
+                letterSpacing = 1.sp
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -87,7 +103,7 @@ fun RegisterScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
             if (errorMessage != null) {
                 Card(
@@ -121,7 +137,7 @@ fun RegisterScreen(
             OutlinedTextField(
                 value = username,
                 onValueChange = {
-                    username = it
+                    username = it.lowercase()
                     errorMessage = null
                 },
                 label = { Text("Username") },
@@ -129,7 +145,7 @@ fun RegisterScreen(
                     Icon(
                         imageVector = Icons.Outlined.Badge,
                         contentDescription = "Username",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = NeonGreen
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -142,11 +158,11 @@ fun RegisterScreen(
                     onNext = { focusManager.moveFocus(FocusDirection.Down) }
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary
+                    focusedBorderColor = NeonGreen,
+                    unfocusedBorderColor = NeonGreen.copy(alpha = 0.3f),
+                    focusedLabelColor = NeonGreen,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    cursorColor = NeonGreen
                 ),
                 shape = RoundedCornerShape(16.dp)
             )
@@ -156,7 +172,7 @@ fun RegisterScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = {
-                    email = it
+                    email = it.lowercase()
                     errorMessage = null
                 },
                 label = { Text("Email") },
@@ -164,7 +180,7 @@ fun RegisterScreen(
                     Icon(
                         imageVector = Icons.Outlined.Email,
                         contentDescription = "Email",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = NeonGreen
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -177,11 +193,11 @@ fun RegisterScreen(
                     onNext = { focusManager.moveFocus(FocusDirection.Down) }
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary
+                    focusedBorderColor = NeonGreen,
+                    unfocusedBorderColor = NeonGreen.copy(alpha = 0.3f),
+                    focusedLabelColor = NeonGreen,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    cursorColor = NeonGreen
                 ),
                 shape = RoundedCornerShape(16.dp)
             )
@@ -199,7 +215,7 @@ fun RegisterScreen(
                     Icon(
                         imageVector = Icons.Outlined.Lock,
                         contentDescription = "Password",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = NeonGreen
                     )
                 },
                 trailingIcon = {
@@ -222,11 +238,11 @@ fun RegisterScreen(
                     onNext = { focusManager.moveFocus(FocusDirection.Down) }
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary
+                    focusedBorderColor = NeonGreen,
+                    unfocusedBorderColor = NeonGreen.copy(alpha = 0.3f),
+                    focusedLabelColor = NeonGreen,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    cursorColor = NeonGreen
                 ),
                 shape = RoundedCornerShape(16.dp)
             )
@@ -331,7 +347,7 @@ fun RegisterScreen(
                         isLoading = true
                         errorMessage = null
 
-                        firebaseService.registerWithEmailEnhanced(email.trim(), password, username.trim()).fold(
+                        firebaseService.registerWithEmailEnhanced(email.trim(), password, username.trim().lowercase()).fold(
                             onSuccess = { user ->
                                 isLoading = false
                                 registeredEmail = user.email
@@ -348,8 +364,8 @@ fun RegisterScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = NeonGreen,
+                    contentColor = DeepMidnight
                 ),
                 shape = RoundedCornerShape(16.dp),
                 enabled = !isLoading
@@ -389,7 +405,7 @@ fun RegisterScreen(
                 )
                 Text(
                     text = "Sign In",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = NeonGreen,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable(enabled = !isLoading) {
@@ -411,7 +427,7 @@ fun RegisterScreen(
                         Icon(
                             imageVector = Icons.Outlined.MarkEmailRead,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = NeonGreen,
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))

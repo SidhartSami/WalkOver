@@ -34,12 +34,4 @@ class AppPreferencesManager(context: Context) {
             apply()
         }
     }
-
-    fun resetFirstLaunchFlow() {
-        sharedPreferences.edit().apply {
-            remove(KEY_PRIVACY_ACCEPTED)
-            remove(KEY_ONBOARDING_COMPLETED)
-            apply()
-        }
-    }
 }

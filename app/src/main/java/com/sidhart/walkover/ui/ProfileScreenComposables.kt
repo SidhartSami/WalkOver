@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import com.sidhart.walkover.ui.theme.NeonGreen
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,47 +32,6 @@ import java.text.SimpleDateFormat
 import androidx.compose.ui.graphics.graphicsLayer
 import java.util.*
 
-@Composable
-fun EmptyStateCard(
-    icon: ImageVector,
-    title: String,
-    subtitle: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(40.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = title,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
 @Composable
 fun CompactStatCard(
     label: String,
@@ -368,117 +328,6 @@ fun AchievementBadge(badge: BadgeWithStatus) {
 }
 
 @Composable
-fun WeeklyProgressCardWithGraph(
-    stats: WeeklyStats,
-    decimalFormat: DecimalFormat,
-    walks: List<Walk>
-) {
-    // Animation state for the entire section
-    var isVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(200)
-        isVisible = true
-    }
-
-    AnimatedVisibility(
-        visible = isVisible,
-        enter = fadeIn(animationSpec = tween(600)) +
-                slideInVertically(
-                    initialOffsetY = { it / 4 },
-                    animationSpec = tween(600, easing = FastOutSlowInEasing)
-                )
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            // Three stat containers above "This Week" heading
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                GreyStatCard(
-                    label = "Walks",
-                    value = stats.walks.toString(),
-                    icon = Icons.Outlined.DirectionsWalk,
-                    iconColor = Color(0xFF4CAF50),
-                    modifier = Modifier.weight(1f),
-                    animationDelay = 0
-                )
-                GreyStatCard(
-                    label = "Distance",
-                    value = "${decimalFormat.format(stats.distance / 1000)} km",
-                    icon = Icons.Outlined.Route,
-                    iconColor = Color(0xFF2196F3),
-                    modifier = Modifier.weight(1f),
-                    animationDelay = 100
-                )
-                GreyStatCard(
-                    label = "Avg/Day",
-                    value = "${decimalFormat.format(stats.distance / 7000)} km",
-                    icon = Icons.Outlined.TrendingUp,
-                    iconColor = Color(0xFFFF9800),
-                    modifier = Modifier.weight(1f),
-                    animationDelay = 200
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // "This Week" Card with Graph
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .animateContentSize(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.CalendarToday,
-                                contentDescription = "Weekly",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "This Week",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Weekly Graph
-                    if (stats.dailyData.isNotEmpty()) {
-                        WeeklyGraph(
-                            dailyData = stats.dailyData,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun GreyStatCard(
     label: String,
     value: String,
@@ -558,6 +407,297 @@ fun GreyStatCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+
+@Composable
+fun WeeklyProgressCard(stats: ProfileWeeklyStats, decimalFormat: DecimalFormat) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.CalendarToday,
+                        contentDescription = "Weekly",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "This Week",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                ProgressStatItem(
+                    label = "Walks",
+                    value = stats.walks.toString(),
+                    icon = Icons.Outlined.DirectionsWalk,
+                    color = Color(0xFF4CAF50)
+                )
+                ProgressStatItem(
+                    label = "Distance",
+                    value = "${decimalFormat.format(stats.distance / 1000)} km",
+                    icon = Icons.Outlined.Route,
+                    color = Color(0xFF2196F3)
+                )
+                ProgressStatItem(
+                    label = "Area",
+                    value = "${decimalFormat.format(stats.area)} m²",
+                    icon = Icons.Outlined.GridOn,
+                    color = Color(0xFFFF9800)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthlyProgressCard(stats: MonthlyStats, decimalFormat: DecimalFormat) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.DateRange,
+                        contentDescription = "Monthly",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "This Month",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                ProgressStatItem(
+                    label = "Walks",
+                    value = stats.walks.toString(),
+                    icon = Icons.Outlined.DirectionsWalk,
+                    color = Color(0xFF4CAF50)
+                )
+                ProgressStatItem(
+                    label = "Distance",
+                    value = "${decimalFormat.format(stats.distance / 1000)} km",
+                    icon = Icons.Outlined.Route,
+                    color = Color(0xFF2196F3)
+                )
+                ProgressStatItem(
+                    label = "Area",
+                    value = "${decimalFormat.format(stats.area)} m²",
+                    icon = Icons.Outlined.GridOn,
+                    color = Color(0xFFFF9800)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ProgressStatItem(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(100.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = value,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun EmptyStateCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun WeeklyProgressCardWithGraph(
+    stats: ProfileWeeklyStats,
+    decimalFormat: DecimalFormat,
+    walks: List<Walk>
+) {
+    // Animation state for the entire section
+    var isVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(200)
+        isVisible = true
+    }
+
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(animationSpec = tween(600)) +
+                slideInVertically(
+                    initialOffsetY = { it / 4 },
+                    animationSpec = tween(600, easing = FastOutSlowInEasing)
+                )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // "This Week" Card with Graph
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.CalendarToday,
+                                contentDescription = "Weekly",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "This Week",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Weekly Graph
+                    if (stats.dailyData.isNotEmpty()) {
+                        WeeklyGraph(
+                            dailyData = stats.dailyData,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -752,176 +892,6 @@ fun WeeklyGraph(
 }
 
 @Composable
-fun WeeklyProgressCard(stats: WeeklyStats, decimalFormat: DecimalFormat) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.CalendarToday,
-                        contentDescription = "Weekly",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "This Week",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                ProgressStatItem(
-                    label = "Walks",
-                    value = stats.walks.toString(),
-                    icon = Icons.Outlined.DirectionsWalk,
-                    color = Color(0xFF4CAF50)
-                )
-                ProgressStatItem(
-                    label = "Distance",
-                    value = "${decimalFormat.format(stats.distance / 1000)} km",
-                    icon = Icons.Outlined.Route,
-                    color = Color(0xFF2196F3)
-                )
-                ProgressStatItem(
-                    label = "Area",
-                    value = "${decimalFormat.format(stats.area)} m²",
-                    icon = Icons.Outlined.GridOn,
-                    color = Color(0xFFFF9800)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun MonthlyProgressCard(stats: MonthlyStats, decimalFormat: DecimalFormat) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.DateRange,
-                        contentDescription = "Monthly",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "This Month",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                ProgressStatItem(
-                    label = "Walks",
-                    value = stats.walks.toString(),
-                    icon = Icons.Outlined.DirectionsWalk,
-                    color = Color(0xFF4CAF50)
-                )
-                ProgressStatItem(
-                    label = "Distance",
-                    value = "${decimalFormat.format(stats.distance / 1000)} km",
-                    icon = Icons.Outlined.Route,
-                    color = Color(0xFF2196F3)
-                )
-                ProgressStatItem(
-                    label = "Area",
-                    value = "${decimalFormat.format(stats.area)} m²",
-                    icon = Icons.Outlined.GridOn,
-                    color = Color(0xFFFF9800)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ProgressStatItem(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    color: Color
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(100.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = color,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
 fun RecentWalksSection(
     walks: List<Walk>,
     isLoading: Boolean,
@@ -940,7 +910,7 @@ fun RecentWalksSection(
                 Icon(
                     imageVector = Icons.Outlined.History,
                     contentDescription = "Recent",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = NeonGreen,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -954,7 +924,7 @@ fun RecentWalksSection(
             TextButton(
                 onClick = onViewAll,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.primary
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Text(
@@ -1037,13 +1007,13 @@ fun RecentWalkItem(walk: Walk, decimalFormat: DecimalFormat) {
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Outlined.DirectionsWalk,
                     contentDescription = "Walk",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -1058,13 +1028,6 @@ fun RecentWalkItem(walk: Walk, decimalFormat: DecimalFormat) {
                     fontWeight = FontWeight.Medium
                 )
             }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Details",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
         }
     }
 }
@@ -1092,23 +1055,25 @@ fun LoadingCard() {
 }
 
 // Data classes
-data class WeeklyStats(
+data class ProfileWeeklyStats(
     val walks: Int,
     val distance: Double,
     val area: Double,
-    val dailyData: List<DailyStat> = emptyList() // For graph
+    val dailyData: List<DailyStat> = emptyList()
 )
 
 data class DailyStat(
-    val day: String, // "Mon", "Tue", etc.
-    val distance: Double, // in meters
+    val day: String,
+    val distance: Double,
     val walks: Int
 )
+
 
 data class MonthlyStats(
     val walks: Int,
     val distance: Double,
-    val area: Double
+    val area: Double,
+    val averageDistance: Double = 0.0  // Add this new parameter with default value
 )
 
 data class BadgeWithStatus(
@@ -1125,7 +1090,6 @@ data class BadgeWithStatus(
 fun getAllAchievementBadges(user: User): List<BadgeWithStatus> {
     val badges = mutableListOf<BadgeWithStatus>()
 
-    // First Walk
     badges.add(BadgeWithStatus(
         name = "First Steps",
         description = "1 walk",
@@ -1135,7 +1099,6 @@ fun getAllAchievementBadges(user: User): List<BadgeWithStatus> {
         unlockHint = "Complete your first walk"
     ))
 
-    // Walk milestones
     badges.add(BadgeWithStatus(
         name = "Explorer",
         description = "10 walks",
@@ -1163,7 +1126,6 @@ fun getAllAchievementBadges(user: User): List<BadgeWithStatus> {
         unlockHint = "Complete 100 walks"
     ))
 
-    // Distance milestones
     badges.add(BadgeWithStatus(
         name = "Kilometer",
         description = "1 km",
@@ -1185,26 +1147,22 @@ fun getAllAchievementBadges(user: User): List<BadgeWithStatus> {
     return badges
 }
 
-// Calculate weekly stats from walks
-fun calculateWeeklyStats(walks: List<Walk>): WeeklyStats {
+fun calculateWeeklyStats(walks: List<Walk>): ProfileWeeklyStats {
     val calendar = Calendar.getInstance()
     val now = System.currentTimeMillis()
     val weekAgo = now - (7 * 24 * 60 * 60 * 1000L)
 
     val weeklyWalks = walks.filter { it.timestamp.time >= weekAgo }
     val totalDistance = weeklyWalks.sumOf { it.distanceCovered }
-    val totalArea = 0.0 // Area calculation removed
+    val totalArea = 0.0
 
-    // Calculate daily stats for graph - Get last 7 days starting from Sunday
     val dailyData = mutableListOf<DailyStat>()
     val dayNames = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
-    // Get the start of the current week (Sunday)
     calendar.timeInMillis = now
-    val currentDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK) // 1=Sunday, 2=Monday, etc.
+    val currentDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
     val daysFromSunday = (currentDayOfWeek - Calendar.SUNDAY + 7) % 7
 
-    // Start from Sunday of current week
     calendar.add(Calendar.DAY_OF_MONTH, -daysFromSunday)
     calendar.set(Calendar.HOUR_OF_DAY, 0)
     calendar.set(Calendar.MINUTE, 0)
@@ -1213,7 +1171,6 @@ fun calculateWeeklyStats(walks: List<Walk>): WeeklyStats {
 
     val weekStart = calendar.timeInMillis
 
-    // Generate data for each day of the week (Sun to Sat)
     for (i in 0 until 7) {
         val dayStart = weekStart + (i * 24 * 60 * 60 * 1000L)
         val dayEnd = dayStart + (24 * 60 * 60 * 1000L)
@@ -1229,26 +1186,32 @@ fun calculateWeeklyStats(walks: List<Walk>): WeeklyStats {
         dailyData.add(DailyStat(dayName, dayDistance, dayWalks.size))
     }
 
-    return WeeklyStats(
+    return ProfileWeeklyStats(
         walks = weeklyWalks.size,
         distance = totalDistance,
         area = totalArea,
         dailyData = dailyData
     )
 }
-
-// Calculate monthly stats from walks
 fun calculateMonthlyStats(walks: List<Walk>): MonthlyStats {
     val now = System.currentTimeMillis()
     val monthAgo = now - (30 * 24 * 60 * 60 * 1000L)
 
     val monthlyWalks = walks.filter { it.timestamp.time >= monthAgo }
     val totalDistance = monthlyWalks.sumOf { it.distanceCovered }
-    val totalArea = 0.0 // Area calculation removed
+    val totalArea = 0.0
+    
+    // Add calculation for average distance
+    val averageDistance = if (monthlyWalks.isNotEmpty()) {
+        totalDistance / monthlyWalks.size
+    } else 0.0
 
     return MonthlyStats(
         walks = monthlyWalks.size,
         distance = totalDistance,
-        area = totalArea
+        area = totalArea,
+        averageDistance = averageDistance  // Pass the calculated average
     )
 }
+
+// And update the MonthlyStats data class by adding the averageDistance parameter:

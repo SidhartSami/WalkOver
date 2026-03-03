@@ -1,9 +1,9 @@
 package com.sidhart.walkover.ui
 
 import android.app.Activity
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,9 +16,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.res.painterResource
+import com.sidhart.walkover.ui.theme.NeonGreen
+import com.sidhart.walkover.ui.theme.DeepMidnight
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,11 +38,9 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.sidhart.walkover.R
 import com.sidhart.walkover.service.FirebaseService
 import kotlinx.coroutines.launch
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.Color
-import com.sidhart.walkover.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,8 +48,6 @@ fun LoginScreen(
     firebaseService: FirebaseService,
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
-    onContinueAsGuest: () -> Unit,
-    onNavigateToVerification: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -53,72 +57,80 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
+    var isGoogleLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showVerificationDialog by remember { mutableStateOf(false) }
     var pendingVerificationEmail by remember { mutableStateOf("") }
 
-    val gso = remember {
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(context.getString(R.string.default_web_client_id))
-            .requestEmail()
-            .build()
-    }
-
-    val googleSignInClient = remember {
-        GoogleSignIn.getClient(context, gso)
-    }
-
+    // Google Sign-In launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                scope.launch {
-                    isLoading = true
+            scope.launch {
+                try {
+                    val account = task.getResult(ApiException::class.java)
+                    isGoogleLoading = true
                     errorMessage = null
-                    
                     firebaseService.signInWithGoogle(account).fold(
-                        onSuccess = { user ->
-                            isLoading = false
-                            Toast.makeText(
-                                context,
-                                "Welcome, ${user.username}!",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                        onSuccess = {
+                            isGoogleLoading = false
                             onLoginSuccess()
                         },
                         onFailure = { error ->
-                            isLoading = false
-                            errorMessage = error.message
-                            Toast.makeText(
-                                context,
-                                "Google sign-in failed: ${error.message}",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            isGoogleLoading = false
+                            errorMessage = error.message ?: "Google sign-in failed"
                         }
                     )
+                } catch (e: ApiException) {
+                    isGoogleLoading = false
+                    errorMessage = "Google sign-in cancelled or failed (code ${e.statusCode})"
                 }
-            } catch (e: ApiException) {
-                isLoading = false
-                errorMessage = "Google sign-in failed"
-                Toast.makeText(
-                    context,
-                    "Google sign-in failed: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
             }
         } else {
-            isLoading = false
-            errorMessage = null
+            isGoogleLoading = false
+        }
+    }
+
+    fun launchGoogleSignIn() {
+        isGoogleLoading = true
+        errorMessage = null
+        // If there's already a signed-in Google account, use it directly
+        val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
+        if (lastAccount != null) {
+            android.util.Log.d("LoginScreen", "Found last signed in account: ${lastAccount.email}")
+            // use cached account to avoid forcing picker again
+            scope.launch {
+                firebaseService.signInWithGoogle(lastAccount).fold(
+                    onSuccess = {
+                        isGoogleLoading = false
+                        onLoginSuccess()
+                    },
+                    onFailure = { error ->
+                        isGoogleLoading = false
+                        errorMessage = error.message ?: "Google sign-in failed"
+                    }
+                )
+            }
+            return
+        }
+        // otherwise launch the picker
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(context.getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        val googleSignInClient = GoogleSignIn.getClient(context, gso)
+        // Sign out first to force account picker (older accounts handled above)
+        googleSignInClient.signOut().addOnCompleteListener {
+            googleSignInLauncher.launch(googleSignInClient.signInIntent)
         }
     }
 
     fun performLogin() {
-        val trimmedEmail = emailOrUsername.trim()
+        val trimmedEmail = emailOrUsername.trim().lowercase()
         val trimmedPassword = password.trim()
-        
+
         if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
             errorMessage = "Please enter your credentials"
             return
@@ -127,21 +139,15 @@ fun LoginScreen(
         scope.launch {
             isLoading = true
             errorMessage = null
-            
+
             firebaseService.signInWithEmailOrUsername(trimmedEmail, trimmedPassword).fold(
-                onSuccess = { user ->
+                onSuccess = {
                     isLoading = false
-                    Toast.makeText(
-                        context,
-                        "Welcome back, ${user.username}!",
-                        Toast.LENGTH_SHORT
-                    ).show()
                     onLoginSuccess()
                 },
                 onFailure = { error ->
                     isLoading = false
                     val errorMsg = error.message ?: "Sign-in failed"
-                    
                     if (errorMsg.startsWith("EMAIL_NOT_VERIFIED|")) {
                         pendingVerificationEmail = errorMsg.substringAfter("EMAIL_NOT_VERIFIED|")
                         showVerificationDialog = true
@@ -165,21 +171,29 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Outlined.DirectionsWalk,
-                contentDescription = "WalkOver",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(72.dp)
-            )
+            // ── Brand Header ──────────────────────────────────
+            val iconDrawable = remember { 
+                ContextCompat.getDrawable(context, R.mipmap.ic_launcher) 
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            if (iconDrawable != null) {
+                Image(
+                    bitmap = iconDrawable.toBitmap().asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = "WalkOver",
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 2.sp
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Black,
+                color = NeonGreen,
+                letterSpacing = 1.sp
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -191,8 +205,9 @@ fun LoginScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
+            // ── Error Banner ─────────────────────────────────
             if (errorMessage != null) {
                 Card(
                     modifier = Modifier
@@ -204,9 +219,9 @@ fun LoginScreen(
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.ErrorOutline,
@@ -222,18 +237,16 @@ fun LoginScreen(
                 }
             }
 
+            // ── Email Field ───────────────────────────────────
             OutlinedTextField(
                 value = emailOrUsername,
-                onValueChange = {
-                    emailOrUsername = it
-                    errorMessage = null
-                },
+                onValueChange = { emailOrUsername = it.lowercase(); errorMessage = null },
                 label = { Text("Email or Username") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Outlined.AccountCircle,
-                        contentDescription = "Email or Username",
-                        tint = MaterialTheme.colorScheme.primary
+                        contentDescription = null,
+                        tint = NeonGreen
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -246,36 +259,33 @@ fun LoginScreen(
                     onNext = { focusManager.moveFocus(FocusDirection.Down) }
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary
+                    focusedBorderColor = NeonGreen,
+                    unfocusedBorderColor = NeonGreen.copy(alpha = 0.3f),
+                    focusedLabelColor = NeonGreen,
+                    cursorColor = NeonGreen
                 ),
                 shape = RoundedCornerShape(16.dp)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // ── Password Field ────────────────────────────────
             OutlinedTextField(
                 value = password,
-                onValueChange = {
-                    password = it
-                    errorMessage = null
-                },
+                onValueChange = { password = it; errorMessage = null },
                 label = { Text("Password") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Outlined.Lock,
-                        contentDescription = "Password",
-                        tint = MaterialTheme.colorScheme.primary
+                        contentDescription = null,
+                        tint = NeonGreen
                     )
                 },
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
                             imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -288,34 +298,31 @@ fun LoginScreen(
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        performLogin()
-                    }
+                    onDone = { focusManager.clearFocus(); performLogin() }
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     cursorColor = MaterialTheme.colorScheme.primary
                 ),
                 shape = RoundedCornerShape(16.dp)
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
+            // ── Sign In Button ────────────────────────────────
             Button(
                 onClick = { performLogin() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = NeonGreen,
+                    contentColor = DeepMidnight
                 ),
                 shape = RoundedCornerShape(16.dp),
-                enabled = !isLoading
+                enabled = !isLoading && !isGoogleLoading
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -324,79 +331,72 @@ fun LoginScreen(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Outlined.Login,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Icon(imageVector = Icons.Outlined.Login, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Divider ───────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outline)
+                Text(
+                    text = "or",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+                HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outline)
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Google Sign-In Button ─────────────────────────
+            OutlinedButton(
+                onClick = { launchGoogleSignIn() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.5.dp,
+                    MaterialTheme.colorScheme.outline
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                enabled = !isLoading && !isGoogleLoading
+            ) {
+                if (isGoogleLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    // Google logo vector
+                    Icon(
+                        painter = painterResource(R.drawable.ic_google_logo),
+                        contentDescription = "Google",
+                        modifier = Modifier.size(24.dp),
+                        tint = Color.Unspecified
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Sign In",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "Continue with Google",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                HorizontalDivider(
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                Text(
-                    text = "OR",
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                HorizontalDivider(
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            OutlinedButton(
-                onClick = {
-                    isLoading = true
-                    errorMessage = null
-                    googleSignInLauncher.launch(googleSignInClient.signInIntent)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.outline)
-                ),
-                shape = RoundedCornerShape(16.dp),
-                enabled = !isLoading
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_google_logo),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = Color.Unspecified
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Continue with Google",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
+            // ── Sign Up Link ──────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -409,17 +409,17 @@ fun LoginScreen(
                 )
                 Text(
                     text = "Sign Up",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = NeonGreen,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(enabled = !isLoading) {
+                    modifier = Modifier.clickable(enabled = !isLoading && !isGoogleLoading) {
                         onNavigateToRegister()
                     }
                 )
             }
         }
 
-        // Email Not Verified Dialog
+        // ── Email Not Verified Dialog ───────────────────────────
         if (showVerificationDialog) {
             AlertDialog(
                 onDismissRequest = { showVerificationDialog = false },
@@ -435,11 +435,7 @@ fun LoginScreen(
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            "Email Not Verified",
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
+                        Text("Email Not Verified", fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     }
                 },
                 text = {
@@ -456,14 +452,8 @@ fun LoginScreen(
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                             )
                         ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp)
-                            ) {
-                                Text(
-                                    "To login:",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("To login:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     "1. Check your email inbox ($pendingVerificationEmail)\n2. Click the verification link\n3. Return here and try logging in again",
@@ -493,44 +483,23 @@ fun LoginScreen(
                 },
                 confirmButton = {
                     Button(
-                        onClick = {
-                            showVerificationDialog = false
-                        },
+                        onClick = { showVerificationDialog = false },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
-                    ) {
-                        Text("Got it")
-                    }
+                    ) { Text("Got it") }
                 },
                 dismissButton = {
-                    TextButton(
-                        onClick = {
-                            showVerificationDialog = false
-                            // Resend verification email
-                            scope.launch {
-                                firebaseService.resendVerificationEmailForUnverifiedUser(pendingVerificationEmail).fold(
-                                    onSuccess = {
-                                        Toast.makeText(
-                                            context,
-                                            "Verification email resent!",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    },
-                                    onFailure = {
-                                        Toast.makeText(
-                                            context,
-                                            "Failed to resend email",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                )
-                            }
+                    TextButton(onClick = {
+                        showVerificationDialog = false
+                        scope.launch {
+                            firebaseService.resendVerificationEmailForUnverifiedUser(pendingVerificationEmail).fold(
+                                onSuccess = {},
+                                onFailure = {}
+                            )
                         }
-                    ) {
-                        Text("Resend Email")
-                    }
+                    }) { Text("Resend Email") }
                 }
             )
         }

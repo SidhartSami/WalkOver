@@ -164,160 +164,11 @@ fun UserProfileCardSkeleton() {
             }
         }
 
-        // Loading indicator centered on card
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(32.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 3.dp
-            )
-        }
     }
 }
 
-// Skeleton for Achievements Section
-@Composable
-fun AchievementsSectionSkeleton() {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ShimmerEffect(
-                modifier = Modifier
-                    .width(130.dp)
-                    .height(16.dp)
-                    .clip(RoundedCornerShape(4.dp))
-            )
-            ShimmerEffect(
-                modifier = Modifier
-                    .width(50.dp)
-                    .height(24.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                // Two rows of 3 badges each
-                repeat(2) { rowIndex ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        repeat(3) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(80.dp)
-                            ) {
-                                ShimmerEffect(
-                                    modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(CircleShape)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                ShimmerEffect(
-                                    modifier = Modifier
-                                        .width(60.dp)
-                                        .height(12.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
-                            }
-                        }
-                    }
-                    if (rowIndex == 0) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Skeleton for Recent Walks Section
-@Composable
-fun RecentWalksSectionSkeleton() {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ShimmerEffect(
-                modifier = Modifier
-                    .width(110.dp)
-                    .height(18.dp)
-                    .clip(RoundedCornerShape(4.dp))
-            )
-            ShimmerEffect(
-                modifier = Modifier
-                    .width(70.dp)
-                    .height(16.dp)
-                    .clip(RoundedCornerShape(4.dp))
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // 3 recent walk item skeletons
-        repeat(3) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ShimmerEffect(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        ShimmerEffect(
-                            modifier = Modifier
-                                .width(140.dp)
-                                .height(14.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                        )
-                    }
-
-                    ShimmerEffect(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-    }
-}
-
-// Skeleton for Weekly Stats Cards
 @Composable
 fun WeeklyStatsCardsSkeleton() {
     Row(
@@ -426,32 +277,6 @@ fun WeeklyGraphSkeleton() {
     }
 }
 
-// Complete Overview Tab Skeleton
-@Composable
-fun OverviewTabSkeleton() {
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Column {
-            AchievementsSectionSkeleton()
-            Spacer(modifier = Modifier.height(24.dp))
-            RecentWalksSectionSkeleton()
-        }
-
-        // Loading indicator overlay
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 120.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(32.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 3.dp
-            )
-        }
-    }
-}
-
 // Complete Stats Tab Skeleton
 @Composable
 fun StatsTabSkeleton() {
@@ -460,20 +285,6 @@ fun StatsTabSkeleton() {
             WeeklyStatsCardsSkeleton()
             Spacer(modifier = Modifier.height(20.dp))
             WeeklyGraphSkeleton()
-        }
-
-        // Loading indicator overlay
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 100.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(32.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 3.dp
-            )
         }
     }
 }
