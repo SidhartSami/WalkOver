@@ -564,11 +564,6 @@ fun MainNavigationScreen(
     val pendingResultDuel by duelViewModel.pendingResultDuel.collectAsState()
     val hasActiveDuel = activeDuel != null && activeDuel?.status == DuelStatus.ACTIVE.name
 
-    // ══════════════════════════════════════════════════════════
-    // 🧪 TEST MODE — set to false before shipping to production!
-    // ══════════════════════════════════════════════════════════
-    val DUEL_CELEBRATION_TEST_MODE = false
-    var showTestCelebration by remember { mutableStateOf(DUEL_CELEBRATION_TEST_MODE) }
 
     LaunchedEffect(Unit) {
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
@@ -1054,28 +1049,7 @@ fun MainNavigationScreen(
         // ── Duel celebration overlay — renders directly over everything ──
         val celebUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
-        if (DUEL_CELEBRATION_TEST_MODE && showTestCelebration) {
-            val testUid = celebUid.ifBlank { "test_user" }
-            val mockDuel = DuelChallenge(
-                id = "test_duel",
-                challengerId = testUid,
-                challengerUsername = "You",
-                opponentId = "opponent_123",
-                opponentUsername = "Runner99",
-                status = DuelStatus.COMPLETED.name,
-                durationDays = 7,
-                challengerDistanceKm = 24.37,
-                opponentDistanceKm = 18.92,
-                winnerId = testUid // change to "opponent_123" to test losing, null for tie
-            )
-            DuelVictoryCelebration(
-                challenge = mockDuel,
-                currentUserId = testUid,
-                onDismiss = { showTestCelebration = false }
-            )
-        }
-
-        if (!DUEL_CELEBRATION_TEST_MODE && activeDuel?.status == DuelStatus.COMPLETED.name) {
+        if (activeDuel?.status == DuelStatus.COMPLETED.name) {
             DuelCompletionDialog(
                 challenge = activeDuel!!,
                 currentUserId = celebUid,
@@ -1083,7 +1057,7 @@ fun MainNavigationScreen(
             )
         }
 
-        if (!DUEL_CELEBRATION_TEST_MODE && pendingResultDuel != null) {
+        if (pendingResultDuel != null) {
             DuelVictoryCelebration(
                 challenge = pendingResultDuel!!,
                 currentUserId = celebUid,
