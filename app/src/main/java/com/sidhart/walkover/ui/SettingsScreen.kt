@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.sidhart.walkover.service.FirebaseService
+import com.sidhart.walkover.data.MapStyle
 import com.sidhart.walkover.ui.components.PolicyDialog
 import kotlinx.coroutines.launch
 
@@ -102,7 +103,7 @@ fun SettingsScreen(
                     SettingsItem(
                         icon = Icons.Outlined.Code,
                         title = "Version",
-                        subtitle = "3.0",
+                        subtitle = "3.0.1",
                         onClick = null
                     )
 

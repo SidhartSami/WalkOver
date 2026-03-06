@@ -13,10 +13,14 @@ android {
         applicationId = "com.sidhart.walkover"
         minSdk = 24
         targetSdk = 36
-        versionCode = 13
-        versionName = "3.0"
+        versionCode = 14
+        versionName = "3.01"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Expose Mapbox token as BuildConfig field (set MAPBOX_ACCESS_TOKEN in gradle.properties)
+        buildConfigField("String", "MAPBOX_ACCESS_TOKEN",
+            "\"${project.findProperty("MAPBOX_ACCESS_TOKEN") ?: ""}\"")
     }
 
     buildTypes {
@@ -43,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

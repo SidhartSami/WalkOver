@@ -3,6 +3,8 @@ package com.sidhart.walkover.repository
 import com.google.firebase.firestore.FirebaseFirestore
 import com.sidhart.walkover.data.DuelChallenge
 import com.sidhart.walkover.data.DuelStatus
+import com.sidhart.walkover.data.User
+import com.sidhart.walkover.data.UserProgress
 import kotlinx.coroutines.tasks.await
 import java.util.*
 
@@ -47,14 +49,23 @@ class DuelRepository {
                         else -> null // Tie
                     }
                     val completedChallenge = challenge.copy(status = DuelStatus.COMPLETED.name, winnerId = winnerId)
+
+                    val updates = mutableMapOf<String, Any?>(
+                        "status" to DuelStatus.COMPLETED.name,
+                        "winnerId" to winnerId
+                    )
+
+                    // Award 100 XP to both players (only once)
+                    if (!challenge.xpAwarded) {
+                        updates["xpAwarded"] = true
+                        awardDuelXP(challenge.challengerId, 100)
+                        awardDuelXP(challenge.opponentId, 100)
+                    }
+
                     firestore.collection(DUELS_COLLECTION).document(challenge.id)
-                        .update(
-                            mapOf(
-                                "status" to DuelStatus.COMPLETED.name,
-                                "winnerId" to winnerId
-                            )
-                        ).await()
-                    return completedChallenge
+                        .update(updates)
+                        .await()
+                    return completedChallenge.copy(xpAwarded = true)
                 }
                 return challenge
             }
@@ -220,6 +231,95 @@ class DuelRepository {
                 .update(fieldName, distanceKm)
                 .await()
             Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Award XP to a user when a duel completes (100 XP for all participants).
+     */
+    private suspend fun awardDuelXP(userId: String, amount: Int) {
+        try {
+            val userRef = firestore.collection("users").document(userId)
+            val userDoc = userRef.get().await()
+            val user = userDoc.toObject(User::class.java) ?: return
+
+            val newTotalXP = user.totalXPEarned + amount
+            val newCurrentXP = user.currentXP + amount
+            val newLevel = UserProgress.calculateLevelFromXP(newTotalXP)
+
+            userRef.update(
+                mapOf(
+                    "currentXP" to newCurrentXP,
+                    "totalXPEarned" to newTotalXP,
+                    "currentLevel" to newLevel
+                )
+            ).await()
+
+            android.util.Log.d("DuelRepository", "🏆 Awarded $amount XP to user $userId for completing duel")
+        } catch (e: Exception) {
+            android.util.Log.e("DuelRepository", "Error awarding duel XP to $userId", e)
+        }
+    }
+
+    /**
+     * Mark the duel result as seen for the given user.
+     * Needed so the victory celebration only appears once on next login.
+     */
+    suspend fun markResultSeen(challengeId: String, isChallenger: Boolean): Result<Unit> {
+        return try {
+            val fieldName = if (isChallenger) "seenByChallenger" else "seenByOpponent"
+            firestore.collection(DUELS_COLLECTION).document(challengeId)
+                .update(fieldName, true)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Get completed duels the user has NOT yet seen the result for.
+     * Used on login to show the celebration screen.
+     */
+    suspend fun getUnseenCompletedDuels(userId: String): Result<List<DuelChallenge>> {
+        return try {
+            val results = mutableListOf<DuelChallenge>()
+
+            // Check as challenger
+            val asChallenger = firestore.collection(DUELS_COLLECTION)
+                .whereEqualTo("challengerId", userId)
+                .whereEqualTo("status", DuelStatus.COMPLETED.name)
+                .whereEqualTo("seenByChallenger", false)
+                .get().await()
+
+            for (doc in asChallenger.documents) {
+                try {
+                    val challenge = doc.toObject(DuelChallenge::class.java)?.apply { id = doc.id }
+                    if (challenge != null) results.add(challenge)
+                } catch (e: Exception) {
+                    android.util.Log.e("DuelRepository", "Error parsing challenge ${doc.id}", e)
+                }
+            }
+
+            // Check as opponent
+            val asOpponent = firestore.collection(DUELS_COLLECTION)
+                .whereEqualTo("opponentId", userId)
+                .whereEqualTo("status", DuelStatus.COMPLETED.name)
+                .whereEqualTo("seenByOpponent", false)
+                .get().await()
+
+            for (doc in asOpponent.documents) {
+                try {
+                    val challenge = doc.toObject(DuelChallenge::class.java)?.apply { id = doc.id }
+                    if (challenge != null) results.add(challenge)
+                } catch (e: Exception) {
+                    android.util.Log.e("DuelRepository", "Error parsing challenge ${doc.id}", e)
+                }
+            }
+
+            Result.success(results)
         } catch (e: Exception) {
             Result.failure(e)
         }

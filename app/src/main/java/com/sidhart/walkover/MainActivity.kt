@@ -561,21 +561,21 @@ fun MainNavigationScreen(
 
     val duelViewModel: com.sidhart.walkover.viewmodel.DuelViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val activeDuel by duelViewModel.activeDuel.collectAsState()
+    val pendingResultDuel by duelViewModel.pendingResultDuel.collectAsState()
     val hasActiveDuel = activeDuel != null && activeDuel?.status == DuelStatus.ACTIVE.name
 
-    if (activeDuel?.status == DuelStatus.COMPLETED.name) {
-        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
-        DuelCompletionDialog(
-            challenge = activeDuel!!,
-            currentUserId = uid,
-            onDismiss = { duelViewModel.clearActiveDuel() }
-        )
-    }
+    // ══════════════════════════════════════════════════════════
+    // 🧪 TEST MODE — set to false before shipping to production!
+    // ══════════════════════════════════════════════════════════
+    val DUEL_CELEBRATION_TEST_MODE = false
+    var showTestCelebration by remember { mutableStateOf(DUEL_CELEBRATION_TEST_MODE) }
 
     LaunchedEffect(Unit) {
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (uid != null) {
             duelViewModel.checkActiveDuel(uid)
+            // Also check for any completed duels the user hasn't seen yet
+            duelViewModel.checkForUnseenDuelResult(uid)
         }
     }
 
@@ -798,8 +798,9 @@ fun MainNavigationScreen(
         }
     }
 
-    BottomSheetScaffold(
-        scaffoldState = scaffoldState,
+    Box(modifier = Modifier.fillMaxSize()) {
+        BottomSheetScaffold(
+            scaffoldState = scaffoldState,
         // Peeked state: just the drag handle row visible, enough to swipe up
         sheetPeekHeight = 80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
         sheetContainerColor = Color.Transparent,
@@ -1042,12 +1043,54 @@ fun MainNavigationScreen(
                         shape = CircleShape
                     ) {
                         Icon(Icons.Default.MyLocation, null, modifier = Modifier.size(20.dp))
-                    }
-                }
-            
-            }
+                    } // closes MyLocation FAB content
+                } // closes Column
+            } // closes inner Map Box
+        } // closes BoxWithConstraints
+    } // closes BottomSheetScaffold
+
+
+
+        // ── Duel celebration overlay — renders directly over everything ──
+        val celebUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+        if (DUEL_CELEBRATION_TEST_MODE && showTestCelebration) {
+            val testUid = celebUid.ifBlank { "test_user" }
+            val mockDuel = DuelChallenge(
+                id = "test_duel",
+                challengerId = testUid,
+                challengerUsername = "You",
+                opponentId = "opponent_123",
+                opponentUsername = "Runner99",
+                status = DuelStatus.COMPLETED.name,
+                durationDays = 7,
+                challengerDistanceKm = 24.37,
+                opponentDistanceKm = 18.92,
+                winnerId = testUid // change to "opponent_123" to test losing, null for tie
+            )
+            DuelVictoryCelebration(
+                challenge = mockDuel,
+                currentUserId = testUid,
+                onDismiss = { showTestCelebration = false }
+            )
         }
-    }
+
+        if (!DUEL_CELEBRATION_TEST_MODE && activeDuel?.status == DuelStatus.COMPLETED.name) {
+            DuelCompletionDialog(
+                challenge = activeDuel!!,
+                currentUserId = celebUid,
+                onDismiss = { duelViewModel.clearActiveDuel() }
+            )
+        }
+
+        if (!DUEL_CELEBRATION_TEST_MODE && pendingResultDuel != null) {
+            DuelVictoryCelebration(
+                challenge = pendingResultDuel!!,
+                currentUserId = celebUid,
+                onDismiss = { duelViewModel.markResultSeen(pendingResultDuel!!, celebUid) }
+            )
+        }
+    } // Close the Box
 
     // ── Merge territories confirmation dialog ─────────────────────
     if (showCleanupDialog) {
@@ -1089,7 +1132,7 @@ fun MainNavigationScreen(
         )
     }
 
-    // ── Celebration overlay (Dialog = own window, always on top) ──
+    // ── Territory celebration overlay ────────────────────────────
     val currentCelebration = celebrationEvent
     if (currentCelebration != null) {
         androidx.compose.ui.window.Dialog(
@@ -1106,6 +1149,7 @@ fun MainNavigationScreen(
             )
         }
     }
+
 }
 
 private fun updateMapVisuals(

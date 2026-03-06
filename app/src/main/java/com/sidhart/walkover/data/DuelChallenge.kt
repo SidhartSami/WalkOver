@@ -30,5 +30,8 @@ data class DuelChallenge(
     val endTimestamp: Date? = null, // Set when accepted (midnight of the last day)
     val challengerDistanceKm: Double = 0.0,
     val opponentDistanceKm: Double = 0.0,
-    val winnerId: String? = null
+    val winnerId: String? = null,
+    val xpAwarded: Boolean = false,         // Prevents double XP award
+    val seenByChallenger: Boolean = false,  // True once challenger views the result celebration
+    val seenByOpponent: Boolean = false     // True once opponent views the result celebration
 )

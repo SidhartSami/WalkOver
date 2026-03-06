@@ -34,6 +34,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sidhart.walkover.data.Walk
+import com.sidhart.walkover.data.MapStyle
 import com.sidhart.walkover.service.FirebaseService
 import com.sidhart.walkover.ui.theme.NeonGreen
 import com.sidhart.walkover.utils.MapUtils

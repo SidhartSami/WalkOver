@@ -1,8 +1,13 @@
 package com.sidhart.walkover.data
 
 data class CelebrationEvent(
-    val title: String,
-    val description: String,
+    val areaM2: Double = 0.0,
+    val distanceKm: Double = 0.0,
+    val isRoam: Boolean = false,
+    val stolenFrom: String? = null,
+    val mergedCount: Int = 0,
+    val title: String = "",
+    val description: String = "",
     val type: CelebrationType = CelebrationType.TERRITORY_CAPTURE
 )
 

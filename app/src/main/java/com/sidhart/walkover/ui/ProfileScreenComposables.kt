@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sidhart.walkover.data.User
+import com.sidhart.walkover.data.UserChallenge
 import com.sidhart.walkover.data.Walk
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
@@ -1215,3 +1216,322 @@ fun calculateMonthlyStats(walks: List<Walk>): MonthlyStats {
 }
 
 // And update the MonthlyStats data class by adding the averageDistance parameter:
+
+// ────────────────────────────────────────────────────────────────────────────
+// Missing composables referenced by ProfileScreen.kt
+// ────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun UserProfileCardWithStats(
+    userData: User,
+    allWalks: List<Walk>,
+    followersCount: Int?,
+    decimalFormat: DecimalFormat,
+    onNavigateToFriendsList: () -> Unit
+) {
+    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    val totalKm = userData.totalDistanceWalked / 1000.0
+    val xpProgress = userData.getProgressToNextLevel()
+    val xpToNext = userData.getXPToNextLevel()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+
+            // Avatar + name row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Avatar circle
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(
+                            NeonGreen.copy(alpha = if (isDarkTheme) 0.2f else 0.15f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = userData.username.take(1).uppercase(),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonGreen
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = userData.username,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "${userData.totalWalks} walks · ${decimalFormat.format(totalKm)} km",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Level badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(NeonGreen.copy(alpha = 0.12f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "LVL",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = NeonGreen,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "${userData.currentLevel}",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            color = NeonGreen
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // XP progress bar
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "XP Progress",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "$xpToNext XP to next level",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { xpProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = NeonGreen,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Followers / following row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToFriendsList() },
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "${followersCount ?: 0}",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Followers",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(36.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "${userData.currentXP}",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonGreen
+                    )
+                    Text(
+                        text = "Total XP",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StreakCardSkeleton() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ShimmerEffect(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                ShimmerEffect(
+                    modifier = Modifier
+                        .width(100.dp)
+                        .height(20.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                ShimmerEffect(
+                    modifier = Modifier
+                        .width(150.dp)
+                        .height(13.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun StreakCard(
+    streakData: com.sidhart.walkover.data.StreakData,
+    todayWalks: List<Walk>,
+    dailyChallenges: List<com.sidhart.walkover.data.UserChallenge>
+) {
+    val hasWalkedToday = todayWalks.isNotEmpty()
+    val streakColor = if (streakData.currentStreak > 0) Color(0xFFFF9500) else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Flame icon
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(streakColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (streakData.currentStreak > 0) "🔥" else "💤",
+                    fontSize = 28.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "${streakData.currentStreak} Day${if (streakData.currentStreak != 1) "s" else ""} Streak",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = streakColor
+                )
+                Text(
+                    text = if (hasWalkedToday) "✅ Walked today — streak safe!" else "Walk today to keep the streak alive!",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Best streak badge
+            if (streakData.longestStreak > 0) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "${streakData.longestStreak}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Best",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RecentWalkButton(onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
+    ) {
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Outlined.History,
+            contentDescription = null,
+            tint = NeonGreen,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Walk History",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
