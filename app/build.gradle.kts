@@ -13,8 +13,8 @@ android {
         applicationId = "com.sidhart.walkover"
         minSdk = 24
         targetSdk = 36
-        versionCode = 14
-        versionName = "3.01"
+        versionCode = 15
+        versionName = "3.02"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
